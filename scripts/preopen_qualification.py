@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -11,6 +11,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from main import build_status
+from monitoring.daily_schedule import SESSION_TIMEZONE, expected_runs_for_date
 from monitoring.shadow_readiness import build_shadow_readiness
 
 
@@ -52,16 +53,22 @@ def _check_legacy_automation_paused(automation_id: str) -> tuple[bool, list[str]
 
 
 def _launchd_service_loaded(label: str, required_fragment: str) -> tuple[bool, str]:
-    result = subprocess.run(
-        ["/bin/launchctl", "print", f"gui/{subprocess.check_output(['/usr/bin/id', '-u'], text=True).strip()}/{label}"],
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
+    try:
+        result = subprocess.run(
+            ["/bin/launchctl", "print", f"gui/{subprocess.check_output(['/usr/bin/id', '-u'], text=True).strip()}/{label}"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        # Off-macOS or launchctl unavailable: fail closed with a reason instead
+        # of crashing the whole qualification report.
+        return False, "LAUNCHCTL_UNAVAILABLE"
     return result.returncode == 0 and required_fragment in result.stdout, result.stdout[-2000:]
 
 
-def build_report() -> dict[str, object]:
+def build_report(observation_day: date | None = None) -> dict[str, object]:
+    day = observation_day or datetime.now(SESSION_TIMEZONE).date()
     status = build_status()
     readiness = build_shadow_readiness().to_dict()
     automation_results = {
@@ -76,14 +83,13 @@ def build_report() -> dict[str, object]:
             continue
         if payload.get("status") == "EXPECTED":
             expected.append(path.name)
-    required_expectations = {
-        "preopen_canary": "launchd-canary-20260721-0610.expected.json",
-        "market_gate": "market-gate-20260721-0635.expected.json",
-        "first_sample": "pilot-20260721-0703.expected.json",
-        "close_summary": "pilot-close-canary-20260721-1305.expected.json",
+    # Every slot of the observation day must be pre-registered; otherwise the
+    # independent watchdog has nothing to verify and is silently fail-open.
+    daily_expected_files = {
+        f"{run_id}.expected.json" for run_id, _scheduled in expected_runs_for_date(day)
     }
     expectation_checks = {
-        name: filename in expected for name, filename in required_expectations.items()
+        filename: filename in expected for filename in sorted(daily_expected_files)
     }
     watchdog_ok, watchdog_detail = _launchd_service_loaded(
         "com.robinhood-ai-trader.watchdog", "run interval = 60 seconds"
@@ -96,6 +102,7 @@ def build_report() -> dict[str, object]:
         and status["live_trading_enabled"] is False
         and status["order_tools_enabled"] is False
         and status["kill_switch_engaged"] is True
+        and status["automation_halted"] is False
     )
     passed = (
         safety_ok
@@ -108,6 +115,7 @@ def build_report() -> dict[str, object]:
     return {
         "schema_version": 1,
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        "observation_day": day.isoformat(),
         "status": "PREOPEN_READY" if passed else "NO_GO",
         "safety_ok": safety_ok,
         "safety": status,
@@ -126,7 +134,10 @@ def build_report() -> dict[str, object]:
 
 
 def main() -> int:
-    report = build_report()
+    observation_day = None
+    if len(sys.argv) > 1:
+        observation_day = date.fromisoformat(sys.argv[1])
+    report = build_report(observation_day)
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     temporary = OUTPUT.with_suffix(".tmp")
     temporary.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")

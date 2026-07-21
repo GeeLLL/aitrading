@@ -74,7 +74,46 @@ class RawDataVault:
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temp, path)
+        self._append_index(snapshot_id, digest, received)
         return RawSnapshotReceipt(snapshot_id, digest, path)
+
+    def _append_index(self, snapshot_id: str, digest: str, received: datetime) -> None:
+        """Append-only hash ledger so later in-place edits are detectable."""
+
+        entry = json.dumps(
+            {
+                "snapshot_id": snapshot_id,
+                "content_sha256": digest,
+                "stored_at": received.astimezone(timezone.utc).isoformat(),
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        with (self.root / "vault_index.jsonl").open("a", encoding="utf-8") as handle:
+            handle.write(entry + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+
+    @staticmethod
+    def _index_digest(snapshot_path: Path, snapshot_id: str) -> str | None:
+        """Return the ledger digest for a snapshot, or None if not indexed."""
+
+        index_path = snapshot_path.parent.parent / "vault_index.jsonl"
+        try:
+            lines = index_path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            return None
+        digest: str | None = None
+        for line in lines:
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                raise ValueError("RAW_VAULT_INDEX_CORRUPT")
+            if isinstance(entry, dict) and entry.get("snapshot_id") == snapshot_id:
+                if digest is not None and digest != entry.get("content_sha256"):
+                    raise ValueError("RAW_VAULT_INDEX_CONFLICT")
+                digest = str(entry.get("content_sha256") or "") or None
+        return digest
 
     @staticmethod
     def verify(path: str | Path, expected_sha256: str | None = None) -> RawSnapshotReceipt:
@@ -98,6 +137,9 @@ class RawDataVault:
             raise ValueError("RAW_SNAPSHOT_NOT_CANONICAL")
         if expected_sha256 is not None and digest != expected_sha256:
             raise ValueError("RAW_SNAPSHOT_HASH_MISMATCH")
+        indexed_digest = RawDataVault._index_digest(snapshot_path, str(envelope["snapshot_id"]))
+        if indexed_digest is not None and indexed_digest != digest:
+            raise ValueError("RAW_SNAPSHOT_INDEX_MISMATCH")
         if _forbidden(envelope["request"]) or _forbidden(envelope["response"]):
             raise ValueError("RAW_SNAPSHOT_CONTAINS_SENSITIVE_FIELDS")
         return RawSnapshotReceipt(str(envelope["snapshot_id"]), digest, snapshot_path)

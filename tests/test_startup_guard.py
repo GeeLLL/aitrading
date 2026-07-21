@@ -39,6 +39,31 @@ class StartupGuardTests(unittest.TestCase):
     def test_rejects_more_than_one_contract(self) -> None:
         self.assert_rejected(max_contracts_per_position=2)
 
+    def removed(self, key: str):
+        config = copy.deepcopy(self.safe_config)
+        config.pop(key, None)
+        return config
+
+    def test_missing_hard_limit_keys_fail_closed_not_typeerror(self) -> None:
+        for key in (
+            "account_equity_kill_threshold_usd",
+            "max_consecutive_losses",
+            "minimum_dte",
+            "maximum_dte",
+        ):
+            with self.assertRaises(UnsafeConfigurationError, msg=key):
+                validate_safety_config(self.removed(key))
+
+    def test_missing_friction_model_is_rejected(self) -> None:
+        with self.assertRaises(UnsafeConfigurationError):
+            validate_safety_config(self.removed("friction_model"))
+
+    def test_negative_friction_value_is_rejected(self) -> None:
+        config = copy.deepcopy(self.safe_config)
+        config["friction_model"]["per_contract_fee_usd"] = -0.01
+        with self.assertRaises(UnsafeConfigurationError):
+            validate_safety_config(config)
+
     def test_rejects_equity_threshold_below_225(self) -> None:
         self.assert_rejected(account_equity_kill_threshold_usd=224)
 

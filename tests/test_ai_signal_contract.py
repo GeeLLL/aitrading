@@ -23,3 +23,22 @@ class AiSignalContractTests(unittest.TestCase):
         }
         with self.assertRaises(ValueError):
             parse_ai_signal(value)
+
+    def malformed_confidence(self, confidence) -> dict:
+        return {
+            "model_version": "m", "prompt_version": "p", "candidate": "SPY",
+            "direction": "CALL", "confidence": confidence, "regime": "UP",
+            "event_risk": "LOW", "abstain": False, "reason_codes": [],
+        }
+
+    def test_every_malformed_confidence_raises_value_error(self) -> None:
+        # The documented contract is ValueError -> NO_TRADE upstream; a stray
+        # decimal.InvalidOperation would escape that handler.
+        for confidence in ("abc", "nan", "NaN", "inf", "-inf", True, None, [], {}):
+            with self.assertRaises(ValueError, msg=repr(confidence)):
+                parse_ai_signal(self.malformed_confidence(confidence))
+
+    def test_unknown_direction_raises_value_error(self) -> None:
+        value = self.malformed_confidence("0.5") | {"direction": "STRADDLE"}
+        with self.assertRaises(ValueError):
+            parse_ai_signal(value)

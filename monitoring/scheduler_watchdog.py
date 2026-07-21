@@ -14,6 +14,36 @@ class WatchdogResult:
     incident_path: Path | None
 
 
+def unresolved_incident_ids(
+    incident_directory: str | Path = "logs/incidents",
+) -> tuple[str, ...]:
+    """Return incident run_ids that still block new work.
+
+    An incident stays blocking until the owner records an explicit resolution
+    object with a non-empty status. Unreadable incident files fail closed and
+    also block.
+    """
+
+    directory = Path(incident_directory)
+    if not directory.exists():
+        return ()
+    blocking: list[str] = []
+    for path in sorted(directory.glob("*.scheduler-incident.json")):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            blocking.append(path.name)
+            continue
+        if not isinstance(payload, dict):
+            blocking.append(path.name)
+            continue
+        resolution = payload.get("resolution")
+        resolved = isinstance(resolution, dict) and bool(str(resolution.get("status") or "").strip())
+        if not resolved:
+            blocking.append(str(payload.get("run_id") or path.name))
+    return tuple(blocking)
+
+
 def catch_up_policy(run_id: str) -> str:
     """Return the only permitted recovery action for a missed scheduled run."""
 

@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from monitoring.shadow_activation import load_shadow_authorization
 from monitoring.shadow_readiness import build_shadow_readiness
 from journal.evidence_eligibility import classify_shadow_evidence
 
@@ -67,7 +68,13 @@ def collect() -> dict:
     for item in summaries:
         for reason, count in (item.get("rule_rejections") or {}).items():
             rejection_totals[reason] = rejection_totals.get(reason, 0) + int(count or 0)
-    eligibility = [classify_shadow_evidence(item) for item in summaries]
+    authorization_verified = load_shadow_authorization(
+        "strategy_v1.0", ROOT / "state/shadow_authorization.json"
+    )
+    eligibility = [
+        classify_shadow_evidence(item, authorization_verified=authorization_verified)
+        for item in summaries
+    ]
     eligible_runs = sum(item.eligible for item in eligibility)
     mechanical_signals = sum(
         int(item.get("decision_pipeline", {}).get("mechanical_signal_count", 0) or 0)

@@ -48,7 +48,11 @@ def run_shadow_replay(
     scenario_path: str | Path,
     *,
     log_root: str | Path = "logs/shadow",
+    pilot_mode: bool = True,
+    shadow_authorized: bool = False,
 ) -> dict[str, Any]:
+    if not pilot_mode and not shadow_authorized:
+        raise ValueError("FORMAL_SHADOW_REQUIRES_AUTHORIZATION_RECORD")
     path = Path(scenario_path)
     try:
         scenario = json.loads(path.read_text(encoding="utf-8"))
@@ -73,7 +77,8 @@ def run_shadow_replay(
         recorder=recorder,
         safety_config=safety,
         strategy_policy=policy,
-        pilot_mode=True,
+        pilot_mode=pilot_mode,
+        shadow_authorized=shadow_authorized,
     )
     controller = ShadowSessionController(runner)
     controller.start()

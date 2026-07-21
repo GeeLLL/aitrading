@@ -6,6 +6,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum
 from typing import Any, Iterable
+from zoneinfo import ZoneInfo
 
 from risk.models import (
     AccountSnapshot,
@@ -168,7 +169,10 @@ def evaluate_shadow_candidate(
     elif option.earnings_date is None:
         reasons.append("EARNINGS_DATE_UNKNOWN")
     else:
-        days_to_earnings = (option.earnings_date - now.date()).days
+        # Use the exchange calendar date, matching the validator's DTE basis, so
+        # the blackout window cannot shift by a day around UTC midnight.
+        market_date = now.astimezone(ZoneInfo("America/New_York")).date()
+        days_to_earnings = (option.earnings_date - market_date).days
         if 0 <= days_to_earnings <= int(eligibility["earnings_blackout_calendar_days"]):
             reasons.append("EARNINGS_BLACKOUT")
 

@@ -20,32 +20,20 @@ from execution.official_mcp_collector import (
 )
 from execution.raw_data_vault import RawDataVault
 from main import build_status
+from monitoring.daily_schedule import DAILY_SLOTS, SESSION_TIMEZONE, run_id_for
+from monitoring.kill_switch import AutomationHalt
 from monitoring.scheduler_health import write_start_ack
+from monitoring.scheduler_watchdog import unresolved_incident_ids
 
 
-LOCAL = ZoneInfo("America/Los_Angeles")
+LOCAL = SESSION_TIMEZONE
 CODEX = Path.home() / ".local/bin/codex"
-LOG_ROOT = ROOT / "logs/launchd_worker/2026-07-21"
 LOCK_PATH = ROOT / "logs/scheduler/launchd-shadow-worker.lock"
-SLOTS = {
-    (6, 10): ("CANARY", "SPY"),
-    (6, 35): ("MARKET_GATE", "SPY"),
-    (7, 3): ("PILOT_SAMPLE", "SPY"),
-    (7, 23): ("PILOT_SAMPLE", "QQQ"),
-    (7, 43): ("PILOT_SAMPLE", "AAPL"),
-    (8, 3): ("PILOT_SAMPLE", "MSFT"),
-    (8, 23): ("PILOT_SAMPLE", "NVDA"),
-    (8, 43): ("PILOT_SAMPLE", "AMZN"),
-    (9, 3): ("PILOT_SAMPLE", "META"),
-    (9, 23): ("PILOT_SAMPLE", "GOOGL"),
-    (9, 43): ("PILOT_SAMPLE", "TSLA"),
-    (10, 3): ("PILOT_SAMPLE", "AMD"),
-    (10, 23): ("PILOT_SAMPLE", "SOFI"),
-    (10, 43): ("PILOT_SAMPLE", "XOM"),
-    (11, 3): ("PILOT_SAMPLE", "SPY"),
-    (11, 23): ("PILOT_SAMPLE", "QQQ"),
-    (13, 5): ("CLOSE_SUMMARY", "SPY"),
-}
+SLOTS = DAILY_SLOTS
+
+
+def _log_root(now: datetime) -> Path:
+    return ROOT / "logs/launchd_worker" / now.astimezone(LOCAL).date().isoformat()
 
 
 def _atomic_json(path: Path, payload: dict[str, object]) -> None:
@@ -67,30 +55,29 @@ def _resolve_slot(now: datetime) -> tuple[datetime, str, str]:
 
 
 def _run_id(scheduled: datetime, kind: str) -> str:
-    stamp = scheduled.strftime("%Y%m%d-%H%M")
-    if kind == "MARKET_GATE":
-        return f"market-gate-{stamp}"
-    if kind == "CANARY":
-        return f"launchd-canary-{stamp}"
-    if kind == "CLOSE_SUMMARY":
-        return f"pilot-close-canary-{stamp}"
-    return f"pilot-{stamp}"
+    return run_id_for(kind, scheduled)
 
 
 def _safety_ok() -> tuple[bool, dict[str, object]]:
     status = build_status()
+    halted = AutomationHalt(ROOT / "state/automation_halt.json").active()
+    incidents = unresolved_incident_ids(ROOT / "logs/incidents")
+    status["automation_halted"] = halted
+    status["unresolved_scheduler_incidents"] = list(incidents)
     valid = (
         status["system_mode"] == "READ_ONLY"
         and status["live_trading_enabled"] is False
         and status["order_tools_enabled"] is False
         and status["kill_switch_engaged"] is True
+        and not halted
+        and not incidents
     )
     return valid, status
 
 
-def _run_canary(run_id: str, symbol: str, ack_path: Path) -> int:
+def _run_canary(run_id: str, symbol: str, ack_path: Path, log_root: Path) -> int:
     """Exercise launchd -> official read-only MCP -> immutable local evidence."""
-    summary_path = LOG_ROOT / f"{run_id}.json"
+    summary_path = log_root / f"{run_id}.json"
     started = datetime.now(timezone.utc)
     try:
         receipt = collect_official_raw_snapshot(symbol, project_root=ROOT)
@@ -132,7 +119,8 @@ def _run_canary(run_id: str, symbol: str, ack_path: Path) -> int:
 
 def main() -> int:
     now = datetime.now(LOCAL)
-    LOG_ROOT.mkdir(parents=True, exist_ok=True)
+    log_root = _log_root(now)
+    log_root.mkdir(parents=True, exist_ok=True)
     if os.environ.get("ROBINHOOD_SHADOW_CANARY") == "1":
         scheduled = now.replace(second=0, microsecond=0)
         kind, symbol = "CANARY", "SPY"
@@ -140,14 +128,14 @@ def main() -> int:
         try:
             scheduled, kind, symbol = _resolve_slot(now)
         except ValueError as error:
-            _atomic_json(LOG_ROOT / f"unscheduled-{now:%H%M%S}.json", {
+            _atomic_json(log_root / f"unscheduled-{now:%H%M%S}.json", {
                 "status": "REFUSED",
                 "reason": str(error),
                 "observed_at": now.astimezone(timezone.utc).isoformat(),
             })
             return 2
     run_id = _run_id(scheduled, kind)
-    summary_path = LOG_ROOT / f"{run_id}.json"
+    summary_path = log_root / f"{run_id}.json"
     try:
         ack_path = write_start_ack(
             run_id=run_id,
@@ -180,15 +168,15 @@ def main() -> int:
             return 2
 
         if kind == "CANARY":
-            return _run_canary(run_id, symbol, ack_path)
+            return _run_canary(run_id, symbol, ack_path, log_root)
 
         prompt = (ROOT / "prompts/launchd_pilot_worker.md").read_text(encoding="utf-8").format(
             run_id=run_id,
             scheduled_for=scheduled.isoformat(),
             symbol=symbol,
         )
-        stdout_path = LOG_ROOT / f"{run_id}.stdout.jsonl"
-        stderr_path = LOG_ROOT / f"{run_id}.stderr.log"
+        stdout_path = log_root / f"{run_id}.stdout.jsonl"
+        stderr_path = log_root / f"{run_id}.stderr.log"
         command = [
             str(CODEX), "exec", "-", "--ephemeral", "--json", "--color", "never",
             "--sandbox", "workspace-write", "--cd", str(ROOT),

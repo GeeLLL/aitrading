@@ -12,10 +12,15 @@ class EvidenceEligibilityTests(unittest.TestCase):
             "rule_violations": {"operational": 0},
         }
 
-    def test_formal_clean_record_is_eligible(self):
-        result = classify_shadow_evidence(self.valid_record())
+    def test_formal_clean_record_is_eligible_only_with_verified_authorization(self):
+        result = classify_shadow_evidence(self.valid_record(), authorization_verified=True)
         self.assertTrue(result.eligible)
         self.assertEqual(result.population, "FORMAL_SHADOW")
+
+    def test_self_asserted_formal_record_without_verified_authorization_is_quarantined(self):
+        result = classify_shadow_evidence(self.valid_record())
+        self.assertFalse(result.eligible)
+        self.assertIn("AUTHORIZATION_RECORD_NOT_VERIFIED", result.reasons)
 
     def test_pilot_and_stale_are_ineligible(self):
         value = self.valid_record() | {"event": "SHADOW_PILOT_SAMPLE", "stale": [{"code": "STALE"}]}
