@@ -276,6 +276,54 @@ def cost_wall_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def friction_calibrate_command(args: argparse.Namespace) -> int:
+    from decimal import Decimal
+
+    from research.cost_wall import FrictionModel
+    from research.friction_calibration import (
+        calibrate_friction,
+        calibrated_cost_wall,
+        default_snapshot_paths,
+    )
+
+    def dec(value: object) -> Decimal:
+        return Decimal(str(value))
+
+    paths = args.snapshots or default_snapshot_paths()
+    if not paths:
+        print(json.dumps({"status": "INVALID", "error": "NO_SNAPSHOTS_FOUND"}, indent=2))
+        return 1
+    try:
+        calibration = calibrate_friction(
+            paths,
+            delta_min=dec(args.delta_min),
+            delta_max=dec(args.delta_max),
+            max_relative_spread=dec(args.max_rel_spread),
+            minimum_volume=args.min_volume,
+            minimum_open_interest=args.min_oi,
+            maximum_premium_usd=dec(args.max_premium) if args.max_premium is not None else None,
+        )
+        result: dict[str, object] = {"calibration": calibration.to_dict()}
+        if args.underlying is not None:
+            friction = FrictionModel.from_safety_config(SAFETY_CONFIG_PATH)
+            result["calibrated_cost_wall"] = calibrated_cost_wall(
+                calibration,
+                underlying_price_usd=dec(args.underlying),
+                friction=friction,
+                holding_fraction_of_day=dec(args.holding_fraction),
+            )
+            result["note"] = (
+                "Spread and theta are now measured, not assumed. Basis "
+                f"'{calibration.basis}': if liquidity was unmet, this reflects the "
+                "delta-eligible universe (e.g. after-hours volume was zero)."
+            )
+    except (OSError, ValueError) as error:
+        print(json.dumps({"status": "INVALID", "error": str(error)}, indent=2))
+        return 1
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
+
+
 def parameter_audit_command(path: str) -> int:
     try:
         raw = json.loads(Path(path).read_text(encoding="utf-8"))
@@ -537,6 +585,19 @@ def parse_args() -> argparse.Namespace:
     cost_wall_parser.add_argument("--trades-per-month", type=int, default=20)
     cost_wall_parser.add_argument("--win-rate", help="Assumed win rate to Monte-Carlo an expectancy CI.")
     cost_wall_parser.add_argument("--ci-trades", type=int, default=40, help="Trades per Monte-Carlo sequence.")
+    friction_parser = subparsers.add_parser(
+        "friction-calibrate",
+        help="Calibrate cost-wall friction from real observed option quotes in the raw vault.",
+    )
+    friction_parser.add_argument("snapshots", nargs="*", help="Raw snapshot paths (default: all under logs/raw).")
+    friction_parser.add_argument("--delta-min", default="0.30")
+    friction_parser.add_argument("--delta-max", default="0.65")
+    friction_parser.add_argument("--max-rel-spread", default="0.05")
+    friction_parser.add_argument("--min-volume", type=int, default=500)
+    friction_parser.add_argument("--min-oi", type=int, default=500)
+    friction_parser.add_argument("--max-premium", help="Premium ceiling in USD (mid*100), e.g. 120 for the account rule.")
+    friction_parser.add_argument("--underlying", help="Underlying price to also print a calibrated cost wall.")
+    friction_parser.add_argument("--holding-fraction", default="0.08")
     parameter_parser = subparsers.add_parser(
         "parameter-audit", help="Audit the mandatory human-selected parameter evidence inventory."
     )
@@ -620,6 +681,8 @@ def main() -> int:
         return shadow_experiment_command()
     if args.command == "cost-wall":
         return cost_wall_command(args)
+    if args.command == "friction-calibrate":
+        return friction_calibrate_command(args)
     if args.command == "parameter-audit":
         return parameter_audit_command(args.path)
     if args.command == "shadow-collect":

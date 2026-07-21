@@ -181,6 +181,20 @@ python3 main.py cost-wall --premium 0.50 --spread-pct 0.08 --delta 0.40 --underl
 
 Friction inputs default to the `[friction_model]` section of `config/safety.toml`.
 
+Replace the assumed spread and theta with values measured from real observed
+option quotes in the raw vault, restricted to the tradeable delta band and
+(optionally) the account premium ceiling — so the wall reflects the account's
+real numbers instead of a placeholder:
+
+```bash
+python3 main.py friction-calibrate --max-premium 120 --underlying 742
+```
+
+It reports the empirical spread/theta/mark distribution, how many contracts
+clear the liquidity filter, and — with `--underlying` — a calibrated cost wall.
+An empty result under `--max-premium` is itself a finding: the sampled
+underlyings have no delta-eligible contract within the premium ceiling.
+
 Audit the complete inventory of human-selected thresholds. The included file
 is intentionally marked unvalidated and therefore returns `REVIEW_REQUIRED`:
 
