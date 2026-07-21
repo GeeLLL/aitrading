@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["method", "scores"],
+  "properties": {
+    "method": {"type": "string", "const": "BLIND_STATELESS_CARD_SCORING"},
+    "scores": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["candidate_id", "accept", "confidence", "reason_code"],
+        "properties": {
+          "candidate_id": {"type": "string"},
+          "accept": {"type": "boolean"},
+          "confidence": {"type": "integer", "minimum": 0, "maximum": 100},
+          "reason_code": {
+            "type": "string",
+            "enum": ["STRONG_CONFIRMED_MOMENTUM", "ADEQUATE_SIGNAL", "WEAK_VOLUME_EDGE", "MIDDAY_NOISE", "SYMBOL_VOLATILITY_RISK", "LOW_CONFIDENCE"]
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "sample_id", "received_at", "source_updated_at", "completed_live_trades", "market", "account", "market_bars", "underlying", "option"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "sample_id": {"type": "string", "minLength": 1},
+    "received_at": {"type": "string"},
+    "source_updated_at": {"type": "string"},
+    "completed_live_trades": {"type": ["integer", "null"], "minimum": 0},
+    "market": {
+      "type": "object", "additionalProperties": false,
+      "required": ["market_open", "within_entry_window", "near_forced_exit"],
+      "properties": {
+        "market_open": {"type": ["boolean", "null"]},
+        "within_entry_window": {"type": ["boolean", "null"]},
+        "near_forced_exit": {"type": ["boolean", "null"]}
+      }
+    },
+    "account": {
+      "type": "object", "additionalProperties": false,
+      "required": ["account_type", "equity", "buying_power", "option_position_count", "equity_position_count", "open_option_order_count", "open_equity_order_count", "consecutive_losses", "entries_today", "settled_cash", "unsettled_cash", "reserved_cash"],
+      "properties": {
+        "account_type": {"type": ["string", "null"]},
+        "equity": {"type": ["string", "number", "null"]},
+        "buying_power": {"type": ["string", "number", "null"]},
+        "option_position_count": {"type": ["integer", "null"], "minimum": 0},
+        "equity_position_count": {"type": ["integer", "null"], "minimum": 0},
+        "open_option_order_count": {"type": ["integer", "null"], "minimum": 0},
+        "open_equity_order_count": {"type": ["integer", "null"], "minimum": 0},
+        "settled_cash": {"type": ["string", "number", "null"]},
+        "unsettled_cash": {"type": ["string", "number", "null"]},
+        "reserved_cash": {"type": ["string", "number", "null"]},
+        "consecutive_losses": {"type": ["integer", "null"], "minimum": 0},
+        "entries_today": {"type": ["integer", "null"], "minimum": 0},
+        "settled_cash": {"$ref": "#/$defs/nullableNumber"},
+        "unsettled_cash": {"$ref": "#/$defs/nullableNumber"},
+        "reserved_cash": {"$ref": "#/$defs/nullableNumber"}
+      }
+    },
+    "market_bars": {
+      "type": "array", "minItems": 4,
+      "items": {"$ref": "#/$defs/marketBar"}
+    },
+    "underlying": {
+      "type": "object", "additionalProperties": false,
+      "required": ["symbol", "close", "vwap", "ema_fast", "ema_slow", "breakout_high", "breakdown_low", "current_volume", "average_volume"],
+      "properties": {
+        "symbol": {"type": "string"},
+        "close": {"$ref": "#/$defs/nullableNumber"},
+        "vwap": {"$ref": "#/$defs/nullableNumber"},
+        "ema_fast": {"$ref": "#/$defs/nullableNumber"},
+        "ema_slow": {"$ref": "#/$defs/nullableNumber"},
+        "breakout_high": {"$ref": "#/$defs/nullableNumber"},
+        "breakdown_low": {"$ref": "#/$defs/nullableNumber"},
+        "current_volume": {"type": ["integer", "null"], "minimum": 0},
+        "average_volume": {"$ref": "#/$defs/nullableNumber"}
+      }
+    },
+    "option": {
+      "type": "object", "additionalProperties": false,
+      "required": ["underlying", "option_type", "strike", "expiration", "bid", "ask", "delta", "quote_updated_at", "quote_received_at", "volume", "open_interest", "earnings_date"],
+      "properties": {
+        "underlying": {"type": "string"},
+        "option_type": {"enum": ["CALL", "PUT"]},
+        "strike": {"$ref": "#/$defs/nullableNumber"},
+        "expiration": {"type": ["string", "null"]},
+        "bid": {"$ref": "#/$defs/nullableNumber"},
+        "ask": {"$ref": "#/$defs/nullableNumber"},
+        "delta": {"$ref": "#/$defs/nullableNumber"},
+        "quote_updated_at": {"type": ["string", "null"]},
+        "quote_received_at": {"type": ["string", "null"]},
+        "volume": {"type": ["integer", "null"], "minimum": 0},
+        "open_interest": {"type": ["integer", "null"], "minimum": 0},
+        "earnings_date": {"type": ["string", "null"]}
+      }
+    }
+  },
+  "$defs": {
+    "nullableNumber": {"type": ["string", "number", "null"]},
+    "marketBar": {
+      "type": "object", "additionalProperties": false,
+      "required": ["symbol", "close", "vwap", "ema_fast", "ema_slow", "interval_minutes", "started_at", "ended_at", "source_updated_at", "received_at", "completed"],
+      "properties": {
+        "symbol": {"type": "string"},
+        "close": {"$ref": "#/$defs/nullableNumber"},
+        "vwap": {"$ref": "#/$defs/nullableNumber"},
+        "ema_fast": {"$ref": "#/$defs/nullableNumber"},
+        "ema_slow": {"$ref": "#/$defs/nullableNumber"},
+        "interval_minutes": {"type": ["integer", "null"]},
+        "started_at": {"type": ["string", "null"]},
+        "ended_at": {"type": ["string", "null"]},
+        "source_updated_at": {"type": ["string", "null"]},
+        "received_at": {"type": ["string", "null"]},
+        "completed": {"type": ["boolean", "null"]}
+      }
+    }
+  }
+}

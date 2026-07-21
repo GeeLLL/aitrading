@@ -1,0 +1,104 @@
+strategy_version = "strategy_v1.0"
+status = "DESIGN"
+
+[objective]
+style = "LOW_FREQUENCY_INTRADAY_LONG_OPTIONS"
+target_monthly_net_return_min_pct = 3.0
+target_monthly_net_return_max_pct = 5.0
+stretch_monthly_net_return_max_pct = 10.0
+profit_target_must_not_force_trades = true
+allow_no_trade = true
+
+[validation]
+minimum_completed_shadow_trades = 30
+minimum_shadow_trading_days = 40
+minimum_profit_factor = 1.20
+maximum_normal_drawdown_pct = 15.0
+require_positive_net_pnl_after_friction = true
+require_zero_hard_rule_violations = true
+require_no_single_trade_dependency = true
+
+[live_stage_1]
+trade_count = 5
+profit_target_enabled = false
+purpose = "EXECUTION_RELIABILITY_ONLY"
+
+[friction]
+include_bid_ask_spread = true
+include_entry_slippage = true
+include_exit_slippage = true
+include_unfilled_limit_orders = true
+
+[research_groups]
+main_dte_min = 7
+main_dte_max = 21
+short_dte_shadow_min = 3
+short_dte_shadow_max = 6
+allow_zero_dte = false
+budget_sensitivity_usd = [75, 120, 200, 300]
+
+[contract_eligibility]
+minimum_absolute_delta = 0.30
+maximum_absolute_delta = 0.65
+maximum_quote_age_seconds = 10
+maximum_relative_spread = 0.05
+minimum_option_volume = 500
+minimum_open_interest = 500
+earnings_blackout_calendar_days = 3
+unknown_required_field_rejects = true
+maximum_contracts = 1
+stage_1_maximum_premium_usd = 75
+
+[data_integrity]
+require_trusted_bar_metadata = true
+maximum_bar_receipt_delay_seconds = 10
+bar_provenance_mode = "INTERVAL_BOUNDARY_PLUS_IMMUTABLE_BATCH_RECEIPT"
+require_per_bar_source_updated_at = false
+maximum_latest_completed_bar_lag_seconds = 420
+reject_incomplete_bars = true
+reject_future_bars = true
+reject_duplicate_or_out_of_order_bars = true
+
+[market_regime]
+reference_symbols = ["SPY", "QQQ"]
+bar_interval_minutes = 5
+confirmation_completed_bars = 2
+fast_ema_period = 9
+slow_ema_period = 20
+require_price_vs_vwap_alignment = true
+require_ema_alignment = true
+mixed_or_unknown_means_no_trade = true
+
+[underlying_signal]
+setup = "FIVE_MINUTE_VOLUME_BREAKOUT"
+bar_interval_minutes = 5
+breakout_lookback_completed_bars = 6
+volume_average_lookback_bars = 20
+minimum_volume_ratio = 1.50
+require_price_vs_vwap_alignment = true
+require_ema_alignment = true
+require_market_regime_alignment = true
+unknown_required_field_means_no_trade = true
+
+[entry_execution]
+order_type = "LIMIT"
+limit_formula = "MID_PLUS_25_PERCENT_OF_SPREAD"
+maximum_fill_wait_seconds = 60
+maximum_reprices = 0
+shadow_fill_requires_observed_ask_at_or_below_limit = true
+unfilled_order_action = "CANCEL_AND_NO_TRADE"
+
+[exit_management]
+stop_loss_option_pct = 20.0
+profit_target_option_pct = 30.0
+maximum_holding_minutes = 60
+exit_on_underlying_vwap_invalidation = true
+shadow_exit_price_source = "BID"
+force_exit_before_close_minutes = 30
+emergency_exit_before_close_minutes = 15
+unknown_position_or_quote_requires_manual_intervention = true
+
+[governance]
+llm_may_modify_automatically = false
+changes_require_new_version = true
+live_activation_requires_manual_approval = true

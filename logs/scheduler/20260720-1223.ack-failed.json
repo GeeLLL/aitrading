@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "run_id": "20260720-1223",
+  "scheduled_for": "2026-07-20T12:23:00-07:00",
+  "attempted_at": "2026-07-20T19:23:24.208Z",
+  "status": "ACK_FAILED",
+  "reason_code": "SCHEDULER_ACK_IMPORT_FAILURE",
+  "detail": "python3 main.py failed before argument dispatch: TypeError: non-default argument 'volume' follows default argument 'quote_received_at'",
+  "positional_arguments_used": true,
+  "flags_used": false,
+  "pilot_excluded_from_performance": true
+}

@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "strategy_version": "strategy_v1.0",
+  "status": "HYPOTHESIS_NOT_VALIDATED",
+  "parameters": {
+    "entry_delay_minutes": 30,
+    "stop_new_entries_before_close_minutes": 90,
+    "dte_min": 7,
+    "dte_max": 21,
+    "delta_min": 0.30,
+    "delta_max": 0.65,
+    "minimum_volume": 500,
+    "minimum_open_interest": 500,
+    "maximum_relative_spread": 0.05,
+    "maximum_quote_age_seconds": 10,
+    "stage_1_premium_cap": 75,
+    "absolute_premium_cap": 120,
+    "stop_loss_pct": 20,
+    "profit_target_pct": 30,
+    "maximum_holding_minutes": 60,
+    "earnings_blackout_days": 3,
+    "sampling_interval_minutes": 20
+  },
+  "evidence_versions": {
+    "entry_delay_minutes": "BASELINE_V1_UNVALIDATED",
+    "stop_new_entries_before_close_minutes": "BASELINE_V1_UNVALIDATED",
+    "dte_min": "BASELINE_V1_UNVALIDATED",
+    "dte_max": "BASELINE_V1_UNVALIDATED",
+    "delta_min": "BASELINE_V1_UNVALIDATED",
+    "delta_max": "BASELINE_V1_UNVALIDATED",
+    "minimum_volume": "BASELINE_V1_UNVALIDATED",
+    "minimum_open_interest": "BASELINE_V1_UNVALIDATED",
+    "maximum_relative_spread": "BASELINE_V1_UNVALIDATED",
+    "maximum_quote_age_seconds": "BASELINE_V1_UNVALIDATED",
+    "stage_1_premium_cap": "BASELINE_V1_UNVALIDATED",
+    "absolute_premium_cap": "BASELINE_V1_UNVALIDATED",
+    "stop_loss_pct": "BASELINE_V1_UNVALIDATED",
+    "profit_target_pct": "BASELINE_V1_UNVALIDATED",
+    "maximum_holding_minutes": "BASELINE_V1_UNVALIDATED",
+    "earnings_blackout_days": "BASELINE_V1_UNVALIDATED",
+    "sampling_interval_minutes": "BASELINE_V1_UNVALIDATED"
+  }
+}

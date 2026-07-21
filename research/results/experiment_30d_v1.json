@@ -1,0 +1,463 @@
+{
+  "method": "UNDERLYING_DIRECTION_PROXY_NOT_OPTION_PNL",
+  "data_files": 12,
+  "candidate_events": 195,
+  "available_sessions": 29,
+  "requested_sessions": 30,
+  "data_shortfall_sessions": 1,
+  "deterministic": {
+    "observations": 29,
+    "trades": 27,
+    "no_trade_rate": 0.06896551724137934,
+    "direction_accuracy": 0.4444444444444444,
+    "mean_net_return": -0.0013610115743098656,
+    "median_net_return": -0.002316986734351803,
+    "cumulative_net_return": -0.03674731250636638,
+    "maximum_drawdown": 0.05290694899332807
+  },
+  "time_split": {
+    "calibration": {
+      "observations": 5,
+      "trades": 5,
+      "no_trade_rate": 0.0,
+      "direction_accuracy": 0.4,
+      "mean_net_return": -0.002833044861446334,
+      "median_net_return": -0.002316986734351803,
+      "cumulative_net_return": -0.01416522430723167,
+      "maximum_drawdown": 0.023825307881324743
+    },
+    "validation": {
+      "observations": 10,
+      "trades": 9,
+      "no_trade_rate": 0.09999999999999998,
+      "direction_accuracy": 0.4444444444444444,
+      "mean_net_return": -0.0019544615739279765,
+      "median_net_return": -0.002366742596810934,
+      "cumulative_net_return": -0.01759015416535179,
+      "maximum_drawdown": 0.02908164111200332
+    },
+    "out_of_sample": {
+      "observations": 14,
+      "trades": 13,
+      "no_trade_rate": 0.0714285714285714,
+      "direction_accuracy": 0.46153846153846156,
+      "mean_net_return": -0.00038399492567560867,
+      "median_net_return": -0.0011712403951701427,
+      "cumulative_net_return": -0.004991934033782914,
+      "maximum_drawdown": 0.015076854384402389
+    }
+  },
+  "random_eligible_baseline": {
+    "repetitions": 1000,
+    "mean_return": -0.027629349439853183,
+    "p05_return": -0.07954934159013471,
+    "p95_return": 0.024226855401457737,
+    "probability_beating_zero": 0.209
+  },
+  "selected": [
+    {
+      "timestamp": "2026-06-05T15:20:00+00:00",
+      "symbol": "NVDA",
+      "direction": "PUT",
+      "entry": "208.810000",
+      "exit": "209.085000",
+      "gross_return": "-0.001316986734351803074565394",
+      "net_return": "-0.002316986734351803074565394",
+      "volume_ratio": "1.529011346733323688993489718"
+    },
+    {
+      "timestamp": "2026-06-08T16:15:00+00:00",
+      "symbol": "TSLA",
+      "direction": "CALL",
+      "entry": "405.830000",
+      "exit": "405.990000",
+      "gross_return": "0.000394253751570854791415125",
+      "net_return": "-0.000605746248429145208584875",
+      "volume_ratio": "2.463515091667135525825725158"
+    },
+    {
+      "timestamp": "2026-06-09T15:25:00+00:00",
+      "symbol": "AMD",
+      "direction": "PUT",
+      "entry": "466.030000",
+      "exit": "459.700000",
+      "gross_return": "0.0135828165568740209857734481",
+      "net_return": "0.0125828165568740209857734481",
+      "volume_ratio": "1.691231205715532813610236689"
+    },
+    {
+      "timestamp": "2026-06-10T15:10:00+00:00",
+      "symbol": "SOFI",
+      "direction": "PUT",
+      "entry": "16.105000",
+      "exit": "16.205000",
+      "gross_return": "-0.006209251785159888233467867",
+      "net_return": "-0.007209251785159888233467867",
+      "volume_ratio": "1.741609957080206762722368657"
+    },
+    {
+      "timestamp": "2026-06-11T17:00:00+00:00",
+      "symbol": "META",
+      "direction": "PUT",
+      "entry": "559.040000",
+      "exit": "567.770000",
+      "gross_return": "-0.015616056096164854035489410",
+      "net_return": "-0.016616056096164854035489410",
+      "volume_ratio": "2.266830633667978665866570866"
+    },
+    {
+      "timestamp": "2026-06-12T17:05:00+00:00",
+      "symbol": "TSLA",
+      "direction": "CALL",
+      "entry": "404.100000",
+      "exit": "401.720100",
+      "gross_return": "-0.0058893838158871566443949517",
+      "net_return": "-0.0068893838158871566443949517",
+      "volume_ratio": "1.931458729261853214419487673"
+    },
+    {
+      "timestamp": "2026-06-16T16:30:00+00:00",
+      "symbol": "NVDA",
+      "direction": "PUT",
+      "entry": "208.525000",
+      "exit": "208.810000",
+      "gross_return": "-0.001366742596810933940774487",
+      "net_return": "-0.002366742596810933940774487",
+      "volume_ratio": "1.544478804320766265743522720"
+    },
+    {
+      "timestamp": "2026-06-17T16:20:00+00:00",
+      "symbol": "TSLA",
+      "direction": "CALL",
+      "entry": "404.700000",
+      "exit": "403.410000",
+      "gross_return": "-0.0031875463306152705707931801",
+      "net_return": "-0.0041875463306152705707931801",
+      "volume_ratio": "1.789531041797843611541887518"
+    },
+    {
+      "timestamp": "2026-06-18T16:25:00+00:00",
+      "symbol": "NVDA",
+      "direction": "CALL",
+      "entry": "209.985000",
+      "exit": "210.080000",
+      "gross_return": "0.000452413267614353406195681",
+      "net_return": "-0.000547586732385646593804319",
+      "volume_ratio": "1.533490460567933790126924537"
+    },
+    {
+      "timestamp": "2026-06-22T16:00:00+00:00",
+      "symbol": "MSFT",
+      "direction": "PUT",
+      "entry": "369.430000",
+      "exit": "368.335000",
+      "gross_return": "0.0029640256611536691660125058",
+      "net_return": "0.0019640256611536691660125058",
+      "volume_ratio": "1.666858141735892822333882420"
+    },
+    {
+      "timestamp": "2026-06-23T15:35:00+00:00",
+      "symbol": "TSLA",
+      "direction": "PUT",
+      "entry": "382.500000",
+      "exit": "384.915000",
+      "gross_return": "-0.006313725490196078431372549",
+      "net_return": "-0.007313725490196078431372549",
+      "volume_ratio": "1.545484616317856414907393158"
+    },
+    {
+      "timestamp": "2026-06-24T15:20:00+00:00",
+      "symbol": "AAPL",
+      "direction": "CALL",
+      "entry": "297.935000",
+      "exit": "299.455000",
+      "gross_return": "0.005101783946162753620756205",
+      "net_return": "0.004101783946162753620756205",
+      "volume_ratio": "1.945841488219906066686613542"
+    },
+    {
+      "timestamp": "2026-06-25T16:10:00+00:00",
+      "symbol": "SOFI",
+      "direction": "CALL",
+      "entry": "17.520000",
+      "exit": "17.295000",
+      "gross_return": "-0.0128424657534246575342465753",
+      "net_return": "-0.0138424657534246575342465753",
+      "volume_ratio": "1.681287540824014560899871323"
+    },
+    {
+      "timestamp": "2026-06-26T15:25:00+00:00",
+      "symbol": "SOFI",
+      "direction": "CALL",
+      "entry": "17.620000",
+      "exit": "17.840100",
+      "gross_return": "0.012491486946651532349602724",
+      "net_return": "0.011491486946651532349602724",
+      "volume_ratio": "2.511737752488994932970779978"
+    },
+    {
+      "timestamp": "2026-06-29T16:05:00+00:00",
+      "symbol": "SOFI",
+      "direction": "CALL",
+      "entry": "17.975000",
+      "exit": "17.935000",
+      "gross_return": "-0.0022253129346314325452016690",
+      "net_return": "-0.0032253129346314325452016690",
+      "volume_ratio": "1.552048769804655103704049430"
+    },
+    {
+      "timestamp": "2026-06-30T15:30:00+00:00",
+      "symbol": "TSLA",
+      "direction": "CALL",
+      "entry": "417.060000",
+      "exit": "416.475000",
+      "gross_return": "-0.0014026758739749676305567544",
+      "net_return": "-0.0024026758739749676305567544",
+      "volume_ratio": "1.793105022395599891129135010"
+    },
+    {
+      "timestamp": "2026-07-02T15:30:00+00:00",
+      "symbol": "XOM",
+      "direction": "PUT",
+      "entry": "137.315000",
+      "exit": "136.950000",
+      "gross_return": "0.0026581218366529512434912428",
+      "net_return": "0.0016581218366529512434912428",
+      "volume_ratio": "1.581387694832559080770590708"
+    },
+    {
+      "timestamp": "2026-07-06T15:15:00+00:00",
+      "symbol": "SOFI",
+      "direction": "CALL",
+      "entry": "18.885000",
+      "exit": "18.990000",
+      "gross_return": "0.005559968228752978554408261",
+      "net_return": "0.004559968228752978554408261",
+      "volume_ratio": "1.750961149667574787387064914"
+    },
+    {
+      "timestamp": "2026-07-07T16:15:00+00:00",
+      "symbol": "NVDA",
+      "direction": "CALL",
+      "entry": "196.420000",
+      "exit": "197.350000",
+      "gross_return": "0.004734752061908155992261481",
+      "net_return": "0.003734752061908155992261481",
+      "volume_ratio": "1.564686904114630617587006806"
+    },
+    {
+      "timestamp": "2026-07-08T15:20:00+00:00",
+      "symbol": "AMD",
+      "direction": "PUT",
+      "entry": "498.610000",
+      "exit": "501.530000",
+      "gross_return": "-0.005856280459677904574717715",
+      "net_return": "-0.006856280459677904574717715",
+      "volume_ratio": "2.242699660227091055096869275"
+    },
+    {
+      "timestamp": "2026-07-09T15:20:00+00:00",
+      "symbol": "AAPL",
+      "direction": "CALL",
+      "entry": "314.300000",
+      "exit": "314.590000",
+      "gross_return": "0.000922685332484887050588610",
+      "net_return": "-0.000077314667515112949411390",
+      "volume_ratio": "1.766600387688815878535692238"
+    },
+    {
+      "timestamp": "2026-07-10T16:20:00+00:00",
+      "symbol": "AMD",
+      "direction": "CALL",
+      "entry": "555.000000",
+      "exit": "553.450000",
+      "gross_return": "-0.0027927927927927927927927928",
+      "net_return": "-0.0037927927927927927927927928",
+      "volume_ratio": "1.657374722849780314556474321"
+    },
+    {
+      "timestamp": "2026-07-13T16:35:00+00:00",
+      "symbol": "NVDA",
+      "direction": "PUT",
+      "entry": "204.975000",
+      "exit": "205.010100",
+      "gross_return": "-0.000171240395170142700329308",
+      "net_return": "-0.001171240395170142700329308",
+      "volume_ratio": "1.883871585577784669739295615"
+    },
+    {
+      "timestamp": "2026-07-14T17:00:00+00:00",
+      "symbol": "NVDA",
+      "direction": "CALL",
+      "entry": "211.130000",
+      "exit": "210.669900",
+      "gross_return": "-0.0021792260692464358452138493",
+      "net_return": "-0.0031792260692464358452138493",
+      "volume_ratio": "1.916786464938858109461160125"
+    },
+    {
+      "timestamp": "2026-07-15T16:00:00+00:00",
+      "symbol": "NVDA",
+      "direction": "PUT",
+      "entry": "207.820000",
+      "exit": "206.354100",
+      "gross_return": "0.0070537003175825233375036089",
+      "net_return": "0.0060537003175825233375036089",
+      "volume_ratio": "1.513201417612092608387595791"
+    },
+    {
+      "timestamp": "2026-07-16T16:15:00+00:00",
+      "symbol": "AMD",
+      "direction": "PUT",
+      "entry": "500.640000",
+      "exit": "499.030000",
+      "gross_return": "0.0032158836689038031319910515",
+      "net_return": "0.0022158836689038031319910515",
+      "volume_ratio": "2.459265380340670284097366287"
+    },
+    {
+      "timestamp": "2026-07-17T15:55:00+00:00",
+      "symbol": "AMD",
+      "direction": "CALL",
+      "entry": "500.160000",
+      "exit": "499.405000",
+      "gross_return": "-0.0015095169545745361484325016",
+      "net_return": "-0.0025095169545745361484325016",
+      "volume_ratio": "2.351498815461586014383406479"
+    }
+  ],
+  "ai_blind_filter": {
+    "observations": 29,
+    "trades": 9,
+    "no_trade_rate": 0.6896551724137931,
+    "direction_accuracy": 0.6666666666666666,
+    "mean_net_return": 0.0025114176880371795,
+    "median_net_return": 0.003702627939142462,
+    "cumulative_net_return": 0.022602759192334614,
+    "maximum_drawdown": 0.006742079720965912
+  },
+  "ai_time_split": {
+    "calibration": {
+      "observations": 5,
+      "trades": 2,
+      "no_trade_rate": 0.6,
+      "direction_accuracy": 0.5,
+      "mean_net_return": -0.001216483011744016,
+      "median_net_return": -0.001216483011744016,
+      "cumulative_net_return": -0.002432966023488032,
+      "maximum_drawdown": 0.0050145953618796315
+    },
+    "validation": {
+      "observations": 10,
+      "trades": 2,
+      "no_trade_rate": 0.8,
+      "direction_accuracy": 0.5,
+      "mean_net_return": 0.004405765969887121,
+      "median_net_return": 0.004405765969887121,
+      "cumulative_net_return": 0.008811531939774242,
+      "maximum_drawdown": 0.0017274843590862796
+    },
+    "out_of_sample": {
+      "observations": 14,
+      "trades": 5,
+      "no_trade_rate": 0.6428571428571428,
+      "direction_accuracy": 0.8,
+      "mean_net_return": 0.003244838655209681,
+      "median_net_return": 0.004628699452342756,
+      "cumulative_net_return": 0.016224193276048404,
+      "maximum_drawdown": 0.005945673165734629
+    }
+  },
+  "ai_selected": [
+    {
+      "timestamp": "2026-06-05T18:10:00+00:00",
+      "symbol": "META",
+      "direction": "PUT",
+      "entry": "594.143000",
+      "exit": "592.015000",
+      "gross_return": "0.0035816293383915993287811184",
+      "net_return": "0.0025816293383915993287811184",
+      "volume_ratio": "12.74145433017007995309724849"
+    },
+    {
+      "timestamp": "2026-06-10T17:35:00+00:00",
+      "symbol": "META",
+      "direction": "PUT",
+      "entry": "574.155000",
+      "exit": "576.460000",
+      "gross_return": "-0.004014595361879631806742082",
+      "net_return": "-0.005014595361879631806742082",
+      "volume_ratio": "3.088213945836088843008532671"
+    },
+    {
+      "timestamp": "2026-06-18T18:10:00+00:00",
+      "symbol": "XOM",
+      "direction": "CALL",
+      "entry": "137.460000",
+      "exit": "137.360000",
+      "gross_return": "-0.0007274843590862796449876328",
+      "net_return": "-0.0017274843590862796449876328",
+      "volume_ratio": "3.898653998416468725257323832"
+    },
+    {
+      "timestamp": "2026-06-24T18:15:00+00:00",
+      "symbol": "GOOGL",
+      "direction": "PUT",
+      "entry": "346.650000",
+      "exit": "342.650000",
+      "gross_return": "0.0115390162988605221404875234",
+      "net_return": "0.0105390162988605221404875234",
+      "volume_ratio": "8.443985087210204895617636452"
+    },
+    {
+      "timestamp": "2026-06-30T16:35:00+00:00",
+      "symbol": "SOFI",
+      "direction": "CALL",
+      "entry": "18.075000",
+      "exit": "18.160000",
+      "gross_return": "0.004702627939142461964038728",
+      "net_return": "0.003702627939142461964038728",
+      "volume_ratio": "3.056005229544526055060876846"
+    },
+    {
+      "timestamp": "2026-07-06T16:15:00+00:00",
+      "symbol": "META",
+      "direction": "CALL",
+      "entry": "595.470000",
+      "exit": "592.525000",
+      "gross_return": "-0.0049456731657346297882345038",
+      "net_return": "-0.0059456731657346297882345038",
+      "volume_ratio": "5.611012409967915325095189560"
+    },
+    {
+      "timestamp": "2026-07-07T18:00:00+00:00",
+      "symbol": "META",
+      "direction": "CALL",
+      "entry": "614.870000",
+      "exit": "620.440000",
+      "gross_return": "0.009058825442776521866410786",
+      "net_return": "0.008058825442776521866410786",
+      "volume_ratio": "8.137426407513582075326446372"
+    },
+    {
+      "timestamp": "2026-07-16T18:05:00+00:00",
+      "symbol": "GOOGL",
+      "direction": "PUT",
+      "entry": "361.540000",
+      "exit": "359.505000",
+      "gross_return": "0.0056286994523427559882723903",
+      "net_return": "0.0046286994523427559882723903",
+      "volume_ratio": "11.02671005892418539736922296"
+    },
+    {
+      "timestamp": "2026-07-17T16:15:00+00:00",
+      "symbol": "META",
+      "direction": "CALL",
+      "entry": "644.570000",
+      "exit": "648.940000",
+      "gross_return": "0.006779713607521293265277627",
+      "net_return": "0.005779713607521293265277627",
+      "volume_ratio": "9.089508318953162756109042499"
+    }
+  ]
+}

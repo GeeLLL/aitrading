@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "data_contract_version": "BAR_RECEIPT_V2_FINAL_QUOTE_REFRESH_V1",
+  "event": "SHADOW_PILOT_SAMPLE",
+  "run_id": "pilot-20260720-1224",
+  "scheduled_for": "2026-07-20T12:24:00-07:00",
+  "started_at": "2026-07-20T19:43:37.189721Z",
+  "observed_at": "2026-07-20T19:47:09.232Z",
+  "completed_at": "2026-07-20T19:49:00.000Z",
+  "run_duration_seconds": 323,
+  "timezone": "America/Los_Angeles",
+  "status": "COMPLETED",
+  "pilot_excluded_from_performance": true,
+  "performance_attribution": "PILOT_EXCLUDED_FROM_PERFORMANCE",
+  "scheduler_ack": {
+    "status": "START_ACK_WRITTEN",
+    "path": "logs/scheduler/pilot-20260720-1224.start.json",
+    "positional_arguments_used": true,
+    "flags_used": false,
+    "acknowledged_at": "2026-07-20T19:43:37.189721Z"
+  },
+  "overlap_check": {
+    "status": "CLEAR",
+    "previous_adjacent_run_id": "20260720-1223",
+    "previous_adjacent_run_status": "FAILED",
+    "unfinished_lock_files_found": 0
+  },
+  "safety": {
+    "system_mode": "READ_ONLY",
+    "live_trading_enabled": false,
+    "order_tools_enabled": false,
+    "kill_switch_engaged": true,
+    "kill_switch_reason": "TRADING_ARM_MARKER_ABSENT",
+    "allowed_mcp_scope": "ROBINHOOD_OFFICIAL_GET_ONLY",
+    "mcp_calls": 10,
+    "prohibited_tool_calls": 0,
+    "account_mutations": 0,
+    "order_tool_calls": 0
+  },
+  "account_summary": {
+    "total_value_usd": 300,
+    "position_count": 0,
+    "unfinished_order_count": 0,
+    "account_identifier_saved": false,
+    "personal_information_saved": false
+  },
+  "sampling": {
+    "equity_quote_samples": 10,
+    "completed_5m_bar_samples": 750,
+    "option_chain_queries": 0,
+    "option_contract_samples": 0,
+    "final_option_quote_refreshes": 0,
+    "incomplete_bars_excluded": 0,
+    "interpolated_bars_excluded": 0,
+    "future_bars_excluded": 0
+  },
+  "bar_data_contract": {
+    "source_updated_at_policy": "OPTIONAL_IF_BROKER_ABSENT_DO_NOT_INVENT",
+    "immutable_batch_receipt_at": "2026-07-20T19:47:09.229Z",
+    "completed_evidence": "START_PLUS_5_MINUTES_LE_RECEIPT",
+    "latest_completed_bar_stale_threshold_seconds": 420,
+    "historical_bar_realtime_threshold_applied": false
+  },
+  "market": {
+    "regime": "BEARISH",
+    "regime_reasons": [],
+    "reference_directions": {"SPY": ["BEARISH", "BEARISH"], "QQQ": ["BEARISH", "BEARISH"]},
+    "missing_underlyings": [],
+    "missing_quote_timestamps": [],
+    "future_quote_timestamps": [],
+    "stale_latest_completed_bar_symbols": [],
+    "latest_completed_bar_ended_at": "2026-07-20T19:45:00.000Z",
+    "bar_integrity": {"missing": 0, "duplicates": 0, "out_of_order": 0, "gaps": 0, "invalid": 0, "future": 0}
+  },
+  "decision_pipeline": {
+    "final_outcome": "NO_TRADE",
+    "terminal_reason": "ALL_MECHANICAL_SIGNALS_NONE",
+    "mechanical_direction_signal_count": 0,
+    "mechanical_none_count": 10,
+    "option_research_status": "NOT_RUN_ALL_MECHANICAL_SIGNALS_NONE",
+    "final_quote_refresh_status": "NOT_APPLICABLE_NO_OPTION_RESEARCH",
+    "virtual_candidate_created": false,
+    "virtual_position_created": false,
+    "real_order_created": false
+  },
+  "rejection_reasons": ["ALL_MECHANICAL_SIGNALS_NONE"],
+  "rule_rejections": {
+    "VOLUME_CONFIRMATION_FAILED": 8,
+    "PRICE_NOT_BELOW_VWAP": 1,
+    "BEARISH_EMA_ALIGNMENT_FAILED": 1,
+    "SIX_BAR_BREAKDOWN_FAILED": 2
+  },
+  "anomalies": [
+    {"code": "SCHEDULED_SLOT_DELAY", "detail": "ACK was accepted for the supplied slot after its scheduled minute; sampling remained read-only and fail-closed."}
+  ],
+  "violations": [],
+  "rule_violations": {
+    "operational": 0,
+    "prohibited_tool_calls": 0,
+    "order_or_account_mutation_calls": 0,
+    "option_chain_queries_after_all_none": 0,
+    "account_identifier_persisted": 0,
+    "personal_information_persisted": 0,
+    "future_or_incomplete_bar_used": 0,
+    "trade_forced": 0
+  },
+  "budget": {
+    "total_budget_seconds": 480,
+    "stop_new_mcp_queries_at_seconds": 360,
+    "new_mcp_queries_stopped_at": "2026-07-20T19:47:09.232Z",
+    "six_minute_query_cutoff_respected": true,
+    "completed_within_budget": true
+  },
+  "outputs": {
+    "summary": "logs/pilot/2026-07-20/pilot-20260720-1224.summary.json",
+    "markets": "logs/pilot/2026-07-20/pilot-20260720-1224.market.jsonl"
+  }
+}

@@ -1,0 +1,52 @@
+schema_version = 1
+system_mode = "READ_ONLY"
+
+live_trading_enabled = false
+order_tools_enabled = false
+# Verified 2026-07-17 during regular market hours using Robinhood's official MCP.
+# Observed SPY option quote ages: Call 0.764s, Put 0.710s.
+realtime_option_quote_verified = true
+
+initial_risk_capital_usd = 300
+max_deployable_capital_usd = 300
+allow_profit_reinvestment = false
+allow_automatic_transfers = false
+allow_margin = false
+
+allowed_opening_positions = ["LONG_CALL", "LONG_PUT"]
+allow_short_options = false
+allow_multi_leg_options = false
+allow_stock_shorting = false
+allow_averaging_down = false
+allow_martingale = false
+
+max_contracts_per_position = 1
+max_concurrent_positions = 1
+max_daily_entries = 1
+
+first_stage_trade_count = 5
+first_stage_max_premium_usd = 75
+second_stage_max_premium_usd = 100
+absolute_max_premium_usd = 120
+stage_upgrade_requires_manual_approval = true
+approved_trade_stage = 1
+stage_2_manually_approved = false
+stage_2_integrity_checks_passed = false
+
+account_equity_kill_threshold_usd = 225
+max_consecutive_losses = 3
+
+allow_overnight = false
+minimum_dte = 7
+maximum_dte = 21
+allow_0dte = false
+
+# Deterministic session clock. All offsets are calculated from Robinhood's
+# confirmed regular-session open/close timestamps, including early closes.
+market_timezone = "America/New_York"
+entry_delay_after_open_minutes = 30
+stop_new_entries_before_close_minutes = 90
+force_exit_before_close_minutes = 30
+emergency_exit_before_close_minutes = 15
+
+shadow_days_required = 5

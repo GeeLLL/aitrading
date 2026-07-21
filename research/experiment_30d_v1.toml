@@ -1,0 +1,41 @@
+experiment_id = "ai_incremental_value_30d_v1"
+status = "FROZEN_BEFORE_DATA"
+data_source = "ROBINHOOD_OFFICIAL_MCP"
+start_date = "2026-06-05"
+end_date = "2026-07-17"
+bar_interval = "5minute"
+candidate_symbols = ["AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "TSLA", "AMD", "SOFI", "XOM"]
+market_references = ["SPY", "QQQ"]
+
+[time_split]
+calibration_days = 5
+validation_days = 10
+out_of_sample_days = 15
+
+[decision]
+wait_after_open_minutes = 30
+stop_before_close_minutes = 90
+maximum_one_selection_per_day = true
+allow_no_trade = true
+forward_return_horizons_minutes = [15, 30, 60]
+
+[features]
+fast_ema_period = 9
+slow_ema_period = 20
+breakout_lookback_bars = 6
+volume_lookback_bars = 20
+minimum_volume_ratio = 1.50
+
+[groups]
+deterministic_baseline = true
+random_eligible_baseline_repetitions = 1000
+ai_rank_and_abstain = true
+ai_direction_research_only = true
+
+[integrity]
+point_in_time_only = true
+completed_bars_only = true
+no_parameter_changes_after_out_of_sample = true
+historical_option_results_are_proxy_only = true
+real_historical_option_pnl_claims_forbidden = true
+

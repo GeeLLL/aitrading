@@ -1,0 +1,1370 @@
+{
+  "instructions": "Score each card independently using only fields on that card; outcomes are hidden.",
+  "cards": [
+    {
+      "candidate_id": "C0001",
+      "timestamp": "2026-06-05T15:20:00+00:00",
+      "symbol": "NVDA",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.529011346733323688993489718"
+    },
+    {
+      "candidate_id": "C0002",
+      "timestamp": "2026-06-05T15:35:00+00:00",
+      "symbol": "SOFI",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.850162267376781966483725438"
+    },
+    {
+      "candidate_id": "C0003",
+      "timestamp": "2026-06-05T16:05:00+00:00",
+      "symbol": "MSFT",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "2.182320372444970320566651502"
+    },
+    {
+      "candidate_id": "C0004",
+      "timestamp": "2026-06-05T16:05:00+00:00",
+      "symbol": "TSLA",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.795239566688533836553645896"
+    },
+    {
+      "candidate_id": "C0005",
+      "timestamp": "2026-06-05T16:15:00+00:00",
+      "symbol": "AMD",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "2.124755684177476217113833330"
+    },
+    {
+      "candidate_id": "C0006",
+      "timestamp": "2026-06-05T16:35:00+00:00",
+      "symbol": "AAPL",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "2.221145860349826932724440026"
+    },
+    {
+      "candidate_id": "C0007",
+      "timestamp": "2026-06-05T16:40:00+00:00",
+      "symbol": "AMD",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.729862640111260781038491380"
+    },
+    {
+      "candidate_id": "C0008",
+      "timestamp": "2026-06-05T16:45:00+00:00",
+      "symbol": "GOOGL",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.529421035535882804046197224"
+    },
+    {
+      "candidate_id": "C0009",
+      "timestamp": "2026-06-05T18:10:00+00:00",
+      "symbol": "AMZN",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.786273059842467043391271523"
+    },
+    {
+      "candidate_id": "C0010",
+      "timestamp": "2026-06-05T18:10:00+00:00",
+      "symbol": "GOOGL",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "2.069820431738962570098780541"
+    },
+    {
+      "candidate_id": "C0011",
+      "timestamp": "2026-06-05T18:10:00+00:00",
+      "symbol": "META",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "12.74145433017007995309724849"
+    },
+    {
+      "candidate_id": "C0012",
+      "timestamp": "2026-06-05T18:10:00+00:00",
+      "symbol": "MSFT",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.613897568984693607330120227"
+    },
+    {
+      "candidate_id": "C0013",
+      "timestamp": "2026-06-05T18:10:00+00:00",
+      "symbol": "NVDA",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.514464522236972373083579598"
+    },
+    {
+      "candidate_id": "C0014",
+      "timestamp": "2026-06-05T18:15:00+00:00",
+      "symbol": "AMZN",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "9.687985624534211868849735475"
+    },
+    {
+      "candidate_id": "C0015",
+      "timestamp": "2026-06-05T18:15:00+00:00",
+      "symbol": "META",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "10.78030310571502069201820919"
+    },
+    {
+      "candidate_id": "C0016",
+      "timestamp": "2026-06-05T18:15:00+00:00",
+      "symbol": "MSFT",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "3.408150977187067589656696342"
+    },
+    {
+      "candidate_id": "C0017",
+      "timestamp": "2026-06-05T18:25:00+00:00",
+      "symbol": "AMD",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.524656542811424810640892321"
+    },
+    {
+      "candidate_id": "C0018",
+      "timestamp": "2026-06-08T16:15:00+00:00",
+      "symbol": "TSLA",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "2.463515091667135525825725158"
+    },
+    {
+      "candidate_id": "C0019",
+      "timestamp": "2026-06-09T15:25:00+00:00",
+      "symbol": "AMD",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.691231205715532813610236689"
+    },
+    {
+      "candidate_id": "C0020",
+      "timestamp": "2026-06-09T15:25:00+00:00",
+      "symbol": "GOOGL",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.877036183178015174638222338"
+    },
+    {
+      "candidate_id": "C0021",
+      "timestamp": "2026-06-09T15:25:00+00:00",
+      "symbol": "MSFT",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.777946589774206931584022213"
+    },
+    {
+      "candidate_id": "C0022",
+      "timestamp": "2026-06-09T15:25:00+00:00",
+      "symbol": "SOFI",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.743787189359467973398669933"
+    },
+    {
+      "candidate_id": "C0023",
+      "timestamp": "2026-06-09T15:25:00+00:00",
+      "symbol": "TSLA",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.560790598243729186672978023"
+    },
+    {
+      "candidate_id": "C0024",
+      "timestamp": "2026-06-09T16:05:00+00:00",
+      "symbol": "AMD",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.863806330915809117320205858"
+    },
+    {
+      "candidate_id": "C0025",
+      "timestamp": "2026-06-09T16:05:00+00:00",
+      "symbol": "NVDA",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.764671653957770503530712444"
+    },
+    {
+      "candidate_id": "C0026",
+      "timestamp": "2026-06-09T16:15:00+00:00",
+      "symbol": "AMD",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "2.006915950113586720964220290"
+    },
+    {
+      "candidate_id": "C0027",
+      "timestamp": "2026-06-09T16:15:00+00:00",
+      "symbol": "META",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.872795688287515892295122210"
+    },
+    {
+      "candidate_id": "C0028",
+      "timestamp": "2026-06-09T16:15:00+00:00",
+      "symbol": "NVDA",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.845496608729966708830194892"
+    },
+    {
+      "candidate_id": "C0029",
+      "timestamp": "2026-06-09T16:15:00+00:00",
+      "symbol": "TSLA",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.837301178873696628057035635"
+    },
+    {
+      "candidate_id": "C0030",
+      "timestamp": "2026-06-09T16:35:00+00:00",
+      "symbol": "AMZN",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.636837517799208221950620052"
+    },
+    {
+      "candidate_id": "C0031",
+      "timestamp": "2026-06-09T16:35:00+00:00",
+      "symbol": "GOOGL",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.531465255545803082345261228"
+    },
+    {
+      "candidate_id": "C0032",
+      "timestamp": "2026-06-09T16:35:00+00:00",
+      "symbol": "MSFT",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.888450308597117074076259247"
+    },
+    {
+      "candidate_id": "C0033",
+      "timestamp": "2026-06-09T16:35:00+00:00",
+      "symbol": "TSLA",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.544776922289377194032751497"
+    },
+    {
+      "candidate_id": "C0034",
+      "timestamp": "2026-06-10T15:10:00+00:00",
+      "symbol": "SOFI",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.741609957080206762722368657"
+    },
+    {
+      "candidate_id": "C0035",
+      "timestamp": "2026-06-10T15:15:00+00:00",
+      "symbol": "AMD",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.905931312057799582823637400"
+    },
+    {
+      "candidate_id": "C0036",
+      "timestamp": "2026-06-10T15:15:00+00:00",
+      "symbol": "SOFI",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.548470518724360969298189120"
+    },
+    {
+      "candidate_id": "C0037",
+      "timestamp": "2026-06-10T16:45:00+00:00",
+      "symbol": "TSLA",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.656614431558577792747312763"
+    },
+    {
+      "candidate_id": "C0038",
+      "timestamp": "2026-06-10T17:35:00+00:00",
+      "symbol": "META",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "3.088213945836088843008532671"
+    },
+    {
+      "candidate_id": "C0039",
+      "timestamp": "2026-06-11T17:00:00+00:00",
+      "symbol": "META",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "2.266830633667978665866570866"
+    },
+    {
+      "candidate_id": "C0040",
+      "timestamp": "2026-06-11T17:00:00+00:00",
+      "symbol": "NVDA",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.824491940002990982713172022"
+    },
+    {
+      "candidate_id": "C0041",
+      "timestamp": "2026-06-11T17:05:00+00:00",
+      "symbol": "MSFT",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "2.157628474299445296610133296"
+    },
+    {
+      "candidate_id": "C0042",
+      "timestamp": "2026-06-11T17:05:00+00:00",
+      "symbol": "XOM",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.689402883727189864744997522"
+    },
+    {
+      "candidate_id": "C0043",
+      "timestamp": "2026-06-11T17:35:00+00:00",
+      "symbol": "SOFI",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "2.014569665315302573708344763"
+    },
+    {
+      "candidate_id": "C0044",
+      "timestamp": "2026-06-11T17:40:00+00:00",
+      "symbol": "AMD",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.532640727819576964211489872"
+    },
+    {
+      "candidate_id": "C0045",
+      "timestamp": "2026-06-11T17:40:00+00:00",
+      "symbol": "AMZN",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.505715238454726847805184418"
+    },
+    {
+      "candidate_id": "C0046",
+      "timestamp": "2026-06-11T17:40:00+00:00",
+      "symbol": "NVDA",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "2.632505102151433757774385772"
+    },
+    {
+      "candidate_id": "C0047",
+      "timestamp": "2026-06-11T17:40:00+00:00",
+      "symbol": "TSLA",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.829705773530878496855042389"
+    },
+    {
+      "candidate_id": "C0048",
+      "timestamp": "2026-06-12T17:05:00+00:00",
+      "symbol": "TSLA",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.931458729261853214419487673"
+    },
+    {
+      "candidate_id": "C0049",
+      "timestamp": "2026-06-12T17:20:00+00:00",
+      "symbol": "AMD",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.674372820553802907661883143"
+    },
+    {
+      "candidate_id": "C0050",
+      "timestamp": "2026-06-12T17:40:00+00:00",
+      "symbol": "AMD",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.514023647016019177473633760"
+    },
+    {
+      "candidate_id": "C0051",
+      "timestamp": "2026-06-16T16:30:00+00:00",
+      "symbol": "NVDA",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.544478804320766265743522720"
+    },
+    {
+      "candidate_id": "C0052",
+      "timestamp": "2026-06-16T16:50:00+00:00",
+      "symbol": "GOOGL",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.557170789104260553330213756"
+    },
+    {
+      "candidate_id": "C0053",
+      "timestamp": "2026-06-16T17:30:00+00:00",
+      "symbol": "MSFT",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.552192827693793410838316681"
+    },
+    {
+      "candidate_id": "C0054",
+      "timestamp": "2026-06-16T17:35:00+00:00",
+      "symbol": "MSFT",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.626955573355779717700512737"
+    },
+    {
+      "candidate_id": "C0055",
+      "timestamp": "2026-06-17T16:20:00+00:00",
+      "symbol": "TSLA",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.789531041797843611541887518"
+    },
+    {
+      "candidate_id": "C0056",
+      "timestamp": "2026-06-17T17:00:00+00:00",
+      "symbol": "AAPL",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.888140290090520750403901899"
+    },
+    {
+      "candidate_id": "C0057",
+      "timestamp": "2026-06-17T17:05:00+00:00",
+      "symbol": "AAPL",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.598874364950646058666208393"
+    },
+    {
+      "candidate_id": "C0058",
+      "timestamp": "2026-06-17T18:05:00+00:00",
+      "symbol": "META",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "2.762020599148519229184206857"
+    },
+    {
+      "candidate_id": "C0059",
+      "timestamp": "2026-06-17T18:15:00+00:00",
+      "symbol": "XOM",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.680362938068075036038675037"
+    },
+    {
+      "candidate_id": "C0060",
+      "timestamp": "2026-06-18T16:25:00+00:00",
+      "symbol": "NVDA",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.533490460567933790126924537"
+    },
+    {
+      "candidate_id": "C0061",
+      "timestamp": "2026-06-18T16:30:00+00:00",
+      "symbol": "NVDA",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.910171146997931262649657515"
+    },
+    {
+      "candidate_id": "C0062",
+      "timestamp": "2026-06-18T16:35:00+00:00",
+      "symbol": "NVDA",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "2.070841868232290492458392488"
+    },
+    {
+      "candidate_id": "C0063",
+      "timestamp": "2026-06-18T17:30:00+00:00",
+      "symbol": "TSLA",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.732275181778945279059853118"
+    },
+    {
+      "candidate_id": "C0064",
+      "timestamp": "2026-06-18T18:10:00+00:00",
+      "symbol": "XOM",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "3.898653998416468725257323832"
+    },
+    {
+      "candidate_id": "C0065",
+      "timestamp": "2026-06-22T16:00:00+00:00",
+      "symbol": "MSFT",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.666858141735892822333882420"
+    },
+    {
+      "candidate_id": "C0066",
+      "timestamp": "2026-06-23T15:35:00+00:00",
+      "symbol": "TSLA",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.545484616317856414907393158"
+    },
+    {
+      "candidate_id": "C0067",
+      "timestamp": "2026-06-24T15:20:00+00:00",
+      "symbol": "AAPL",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.945841488219906066686613542"
+    },
+    {
+      "candidate_id": "C0068",
+      "timestamp": "2026-06-24T15:25:00+00:00",
+      "symbol": "AAPL",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.555461713601216019913346232"
+    },
+    {
+      "candidate_id": "C0069",
+      "timestamp": "2026-06-24T16:40:00+00:00",
+      "symbol": "NVDA",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "2.627693607846236957259451065"
+    },
+    {
+      "candidate_id": "C0070",
+      "timestamp": "2026-06-24T16:45:00+00:00",
+      "symbol": "NVDA",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "2.218196017540473504123669348"
+    },
+    {
+      "candidate_id": "C0071",
+      "timestamp": "2026-06-24T17:05:00+00:00",
+      "symbol": "AMD",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.889220180860337808773476434"
+    },
+    {
+      "candidate_id": "C0072",
+      "timestamp": "2026-06-24T17:05:00+00:00",
+      "symbol": "NVDA",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.711766543722332452840906785"
+    },
+    {
+      "candidate_id": "C0073",
+      "timestamp": "2026-06-24T17:05:00+00:00",
+      "symbol": "TSLA",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.796289519751221779679815310"
+    },
+    {
+      "candidate_id": "C0074",
+      "timestamp": "2026-06-24T17:15:00+00:00",
+      "symbol": "AMD",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.647100355099457908728571285"
+    },
+    {
+      "candidate_id": "C0075",
+      "timestamp": "2026-06-24T17:15:00+00:00",
+      "symbol": "META",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.821288708178547435294227803"
+    },
+    {
+      "candidate_id": "C0076",
+      "timestamp": "2026-06-24T17:15:00+00:00",
+      "symbol": "MSFT",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.790334196336152934768860656"
+    },
+    {
+      "candidate_id": "C0077",
+      "timestamp": "2026-06-24T17:20:00+00:00",
+      "symbol": "AMD",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "2.839159650849529801777632745"
+    },
+    {
+      "candidate_id": "C0078",
+      "timestamp": "2026-06-24T17:20:00+00:00",
+      "symbol": "TSLA",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.755732211304824646169422288"
+    },
+    {
+      "candidate_id": "C0079",
+      "timestamp": "2026-06-24T17:30:00+00:00",
+      "symbol": "AMZN",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "2.279462721432742846019077282"
+    },
+    {
+      "candidate_id": "C0080",
+      "timestamp": "2026-06-24T17:40:00+00:00",
+      "symbol": "GOOGL",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.533797051842911754581322392"
+    },
+    {
+      "candidate_id": "C0081",
+      "timestamp": "2026-06-24T18:15:00+00:00",
+      "symbol": "GOOGL",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "8.443985087210204895617636452"
+    },
+    {
+      "candidate_id": "C0082",
+      "timestamp": "2026-06-24T18:25:00+00:00",
+      "symbol": "AMZN",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.819077637680284033429016784"
+    },
+    {
+      "candidate_id": "C0083",
+      "timestamp": "2026-06-25T16:10:00+00:00",
+      "symbol": "SOFI",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.681287540824014560899871323"
+    },
+    {
+      "candidate_id": "C0084",
+      "timestamp": "2026-06-25T18:20:00+00:00",
+      "symbol": "MSFT",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.529765266925843165641610914"
+    },
+    {
+      "candidate_id": "C0085",
+      "timestamp": "2026-06-25T18:25:00+00:00",
+      "symbol": "MSFT",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.580336265574996842701705393"
+    },
+    {
+      "candidate_id": "C0086",
+      "timestamp": "2026-06-26T15:25:00+00:00",
+      "symbol": "SOFI",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "2.511737752488994932970779978"
+    },
+    {
+      "candidate_id": "C0087",
+      "timestamp": "2026-06-26T15:30:00+00:00",
+      "symbol": "MSFT",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "2.144123345361538126445084013"
+    },
+    {
+      "candidate_id": "C0088",
+      "timestamp": "2026-06-26T15:30:00+00:00",
+      "symbol": "TSLA",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "2.709067607559707366990657573"
+    },
+    {
+      "candidate_id": "C0089",
+      "timestamp": "2026-06-26T15:35:00+00:00",
+      "symbol": "NVDA",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.600008981216725114197214987"
+    },
+    {
+      "candidate_id": "C0090",
+      "timestamp": "2026-06-26T15:35:00+00:00",
+      "symbol": "SOFI",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "2.463907018633797940576074390"
+    },
+    {
+      "candidate_id": "C0091",
+      "timestamp": "2026-06-26T15:40:00+00:00",
+      "symbol": "AMD",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.549099003101986692240297412"
+    },
+    {
+      "candidate_id": "C0092",
+      "timestamp": "2026-06-26T15:40:00+00:00",
+      "symbol": "SOFI",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "2.268701106819938170020613190"
+    },
+    {
+      "candidate_id": "C0093",
+      "timestamp": "2026-06-26T15:45:00+00:00",
+      "symbol": "SOFI",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "2.110001196430553831786486529"
+    },
+    {
+      "candidate_id": "C0094",
+      "timestamp": "2026-06-26T15:50:00+00:00",
+      "symbol": "GOOGL",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.647027431442608096723567412"
+    },
+    {
+      "candidate_id": "C0095",
+      "timestamp": "2026-06-26T15:55:00+00:00",
+      "symbol": "GOOGL",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "2.220751573578370364517042435"
+    },
+    {
+      "candidate_id": "C0096",
+      "timestamp": "2026-06-26T16:00:00+00:00",
+      "symbol": "GOOGL",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.523439263930175948906570969"
+    },
+    {
+      "candidate_id": "C0097",
+      "timestamp": "2026-06-29T16:05:00+00:00",
+      "symbol": "SOFI",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.552048769804655103704049430"
+    },
+    {
+      "candidate_id": "C0098",
+      "timestamp": "2026-06-29T16:25:00+00:00",
+      "symbol": "TSLA",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.505755035806330727958629434"
+    },
+    {
+      "candidate_id": "C0099",
+      "timestamp": "2026-06-29T16:25:00+00:00",
+      "symbol": "XOM",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "2.135437055149419657405996841"
+    },
+    {
+      "candidate_id": "C0100",
+      "timestamp": "2026-06-29T17:05:00+00:00",
+      "symbol": "TSLA",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.570052538013405375177337640"
+    },
+    {
+      "candidate_id": "C0101",
+      "timestamp": "2026-06-29T17:15:00+00:00",
+      "symbol": "AMD",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "2.527711943737898881510408700"
+    },
+    {
+      "candidate_id": "C0102",
+      "timestamp": "2026-06-29T17:25:00+00:00",
+      "symbol": "AMD",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "2.840572536486980525215348151"
+    },
+    {
+      "candidate_id": "C0103",
+      "timestamp": "2026-06-29T17:30:00+00:00",
+      "symbol": "GOOGL",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.697009499868594397134069018"
+    },
+    {
+      "candidate_id": "C0104",
+      "timestamp": "2026-06-29T17:30:00+00:00",
+      "symbol": "XOM",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "2.292301366908414440160685881"
+    },
+    {
+      "candidate_id": "C0105",
+      "timestamp": "2026-06-29T17:35:00+00:00",
+      "symbol": "TSLA",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.985823211312823080193420985"
+    },
+    {
+      "candidate_id": "C0106",
+      "timestamp": "2026-06-30T15:30:00+00:00",
+      "symbol": "TSLA",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.793105022395599891129135010"
+    },
+    {
+      "candidate_id": "C0107",
+      "timestamp": "2026-06-30T15:40:00+00:00",
+      "symbol": "AMD",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "2.150886424827350682239877633"
+    },
+    {
+      "candidate_id": "C0108",
+      "timestamp": "2026-06-30T15:50:00+00:00",
+      "symbol": "AMD",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "2.060322201174494297688772997"
+    },
+    {
+      "candidate_id": "C0109",
+      "timestamp": "2026-06-30T15:50:00+00:00",
+      "symbol": "AMZN",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.870467067867213447517481433"
+    },
+    {
+      "candidate_id": "C0110",
+      "timestamp": "2026-06-30T16:30:00+00:00",
+      "symbol": "SOFI",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "2.396329095729389593381671831"
+    },
+    {
+      "candidate_id": "C0111",
+      "timestamp": "2026-06-30T16:35:00+00:00",
+      "symbol": "SOFI",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "3.056005229544526055060876846"
+    },
+    {
+      "candidate_id": "C0112",
+      "timestamp": "2026-06-30T16:40:00+00:00",
+      "symbol": "SOFI",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "2.505408624719767983687531604"
+    },
+    {
+      "candidate_id": "C0113",
+      "timestamp": "2026-06-30T16:45:00+00:00",
+      "symbol": "SOFI",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.537050257106072637283849730"
+    },
+    {
+      "candidate_id": "C0114",
+      "timestamp": "2026-06-30T16:50:00+00:00",
+      "symbol": "MSFT",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "3.141596024098576583644870739"
+    },
+    {
+      "candidate_id": "C0115",
+      "timestamp": "2026-06-30T16:50:00+00:00",
+      "symbol": "SOFI",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.623256018661150477531798776"
+    },
+    {
+      "candidate_id": "C0116",
+      "timestamp": "2026-06-30T17:20:00+00:00",
+      "symbol": "META",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.637126846579861892813432500"
+    },
+    {
+      "candidate_id": "C0117",
+      "timestamp": "2026-06-30T17:40:00+00:00",
+      "symbol": "NVDA",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.565400327781744820111999722"
+    },
+    {
+      "candidate_id": "C0118",
+      "timestamp": "2026-06-30T18:00:00+00:00",
+      "symbol": "AAPL",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "2.832496039079930178991231740"
+    },
+    {
+      "candidate_id": "C0119",
+      "timestamp": "2026-06-30T18:20:00+00:00",
+      "symbol": "NVDA",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "2.166508679159832591699671749"
+    },
+    {
+      "candidate_id": "C0120",
+      "timestamp": "2026-07-02T15:30:00+00:00",
+      "symbol": "XOM",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.581387694832559080770590708"
+    },
+    {
+      "candidate_id": "C0121",
+      "timestamp": "2026-07-02T15:35:00+00:00",
+      "symbol": "XOM",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "2.773003936485183941903652717"
+    },
+    {
+      "candidate_id": "C0122",
+      "timestamp": "2026-07-02T16:05:00+00:00",
+      "symbol": "GOOGL",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.705903209648643933296938931"
+    },
+    {
+      "candidate_id": "C0123",
+      "timestamp": "2026-07-02T16:50:00+00:00",
+      "symbol": "GOOGL",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "2.364530385925949583217662825"
+    },
+    {
+      "candidate_id": "C0124",
+      "timestamp": "2026-07-02T17:00:00+00:00",
+      "symbol": "AMZN",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.601033026439711494985912378"
+    },
+    {
+      "candidate_id": "C0125",
+      "timestamp": "2026-07-06T15:15:00+00:00",
+      "symbol": "SOFI",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.750961149667574787387064914"
+    },
+    {
+      "candidate_id": "C0126",
+      "timestamp": "2026-07-06T15:20:00+00:00",
+      "symbol": "SOFI",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.500189110892250100498233527"
+    },
+    {
+      "candidate_id": "C0127",
+      "timestamp": "2026-07-06T15:40:00+00:00",
+      "symbol": "SOFI",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.603262370016451887376752212"
+    },
+    {
+      "candidate_id": "C0128",
+      "timestamp": "2026-07-06T16:05:00+00:00",
+      "symbol": "TSLA",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.701197325091778599282114609"
+    },
+    {
+      "candidate_id": "C0129",
+      "timestamp": "2026-07-06T16:10:00+00:00",
+      "symbol": "NVDA",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "2.658097010735166570696077471"
+    },
+    {
+      "candidate_id": "C0130",
+      "timestamp": "2026-07-06T16:15:00+00:00",
+      "symbol": "META",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "5.611012409967915325095189560"
+    },
+    {
+      "candidate_id": "C0131",
+      "timestamp": "2026-07-06T16:15:00+00:00",
+      "symbol": "TSLA",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.594533677997586908064292374"
+    },
+    {
+      "candidate_id": "C0132",
+      "timestamp": "2026-07-07T16:15:00+00:00",
+      "symbol": "NVDA",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.564686904114630617587006806"
+    },
+    {
+      "candidate_id": "C0133",
+      "timestamp": "2026-07-07T16:20:00+00:00",
+      "symbol": "NVDA",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.793414508477684662495330549"
+    },
+    {
+      "candidate_id": "C0134",
+      "timestamp": "2026-07-07T16:25:00+00:00",
+      "symbol": "NVDA",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.795289083656398856104049471"
+    },
+    {
+      "candidate_id": "C0135",
+      "timestamp": "2026-07-07T16:30:00+00:00",
+      "symbol": "NVDA",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.885531480641209866864086271"
+    },
+    {
+      "candidate_id": "C0136",
+      "timestamp": "2026-07-07T17:00:00+00:00",
+      "symbol": "NVDA",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.593625767492380118726817457"
+    },
+    {
+      "candidate_id": "C0137",
+      "timestamp": "2026-07-07T17:55:00+00:00",
+      "symbol": "META",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.522726625999517745324600829"
+    },
+    {
+      "candidate_id": "C0138",
+      "timestamp": "2026-07-07T18:00:00+00:00",
+      "symbol": "AMZN",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.766960539720994408657355784"
+    },
+    {
+      "candidate_id": "C0139",
+      "timestamp": "2026-07-07T18:00:00+00:00",
+      "symbol": "GOOGL",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "2.023660619005873064596908117"
+    },
+    {
+      "candidate_id": "C0140",
+      "timestamp": "2026-07-07T18:00:00+00:00",
+      "symbol": "META",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "8.137426407513582075326446372"
+    },
+    {
+      "candidate_id": "C0141",
+      "timestamp": "2026-07-07T18:05:00+00:00",
+      "symbol": "META",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "7.266401154005553705272378937"
+    },
+    {
+      "candidate_id": "C0142",
+      "timestamp": "2026-07-07T18:15:00+00:00",
+      "symbol": "META",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "3.090720414530866948963672833"
+    },
+    {
+      "candidate_id": "C0143",
+      "timestamp": "2026-07-07T18:20:00+00:00",
+      "symbol": "META",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "5.195940289264066615515526702"
+    },
+    {
+      "candidate_id": "C0144",
+      "timestamp": "2026-07-08T15:20:00+00:00",
+      "symbol": "AMD",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "2.242699660227091055096869275"
+    },
+    {
+      "candidate_id": "C0145",
+      "timestamp": "2026-07-08T16:35:00+00:00",
+      "symbol": "AAPL",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.579262506418549289922469368"
+    },
+    {
+      "candidate_id": "C0146",
+      "timestamp": "2026-07-08T16:50:00+00:00",
+      "symbol": "AAPL",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.588558775103743430736344373"
+    },
+    {
+      "candidate_id": "C0147",
+      "timestamp": "2026-07-08T16:50:00+00:00",
+      "symbol": "NVDA",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.872070045016702214793763032"
+    },
+    {
+      "candidate_id": "C0148",
+      "timestamp": "2026-07-08T16:55:00+00:00",
+      "symbol": "NVDA",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.963035736537084589386257399"
+    },
+    {
+      "candidate_id": "C0149",
+      "timestamp": "2026-07-08T17:20:00+00:00",
+      "symbol": "NVDA",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "2.063961875606800837472170593"
+    },
+    {
+      "candidate_id": "C0150",
+      "timestamp": "2026-07-08T17:25:00+00:00",
+      "symbol": "NVDA",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "2.092648022625871019019576030"
+    },
+    {
+      "candidate_id": "C0151",
+      "timestamp": "2026-07-08T17:35:00+00:00",
+      "symbol": "META",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.755176078273296932830078053"
+    },
+    {
+      "candidate_id": "C0152",
+      "timestamp": "2026-07-08T17:35:00+00:00",
+      "symbol": "NVDA",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "2.043392240402389551844666654"
+    },
+    {
+      "candidate_id": "C0153",
+      "timestamp": "2026-07-09T15:20:00+00:00",
+      "symbol": "AAPL",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.766600387688815878535692238"
+    },
+    {
+      "candidate_id": "C0154",
+      "timestamp": "2026-07-09T15:45:00+00:00",
+      "symbol": "TSLA",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.543310423074226955122871746"
+    },
+    {
+      "candidate_id": "C0155",
+      "timestamp": "2026-07-09T16:05:00+00:00",
+      "symbol": "META",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.975742843630335175927950652"
+    },
+    {
+      "candidate_id": "C0156",
+      "timestamp": "2026-07-09T16:15:00+00:00",
+      "symbol": "META",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.592044418821064013530420720"
+    },
+    {
+      "candidate_id": "C0157",
+      "timestamp": "2026-07-09T16:15:00+00:00",
+      "symbol": "TSLA",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.921386657912189884967181000"
+    },
+    {
+      "candidate_id": "C0158",
+      "timestamp": "2026-07-09T16:20:00+00:00",
+      "symbol": "AMZN",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.699990531043767162483172018"
+    },
+    {
+      "candidate_id": "C0159",
+      "timestamp": "2026-07-09T16:20:00+00:00",
+      "symbol": "META",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "2.302404100770558153248368907"
+    },
+    {
+      "candidate_id": "C0160",
+      "timestamp": "2026-07-09T17:00:00+00:00",
+      "symbol": "TSLA",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.676414565484037020121557240"
+    },
+    {
+      "candidate_id": "C0161",
+      "timestamp": "2026-07-09T17:05:00+00:00",
+      "symbol": "AMZN",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.793557453087980660494536664"
+    },
+    {
+      "candidate_id": "C0162",
+      "timestamp": "2026-07-09T17:05:00+00:00",
+      "symbol": "NVDA",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.788977260664866600946614239"
+    },
+    {
+      "candidate_id": "C0163",
+      "timestamp": "2026-07-09T17:15:00+00:00",
+      "symbol": "MSFT",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.541331991177297825411158646"
+    },
+    {
+      "candidate_id": "C0164",
+      "timestamp": "2026-07-09T17:25:00+00:00",
+      "symbol": "AMZN",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "2.172311664129210135133615639"
+    },
+    {
+      "candidate_id": "C0165",
+      "timestamp": "2026-07-09T17:30:00+00:00",
+      "symbol": "AMZN",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.502123926906752132127807957"
+    },
+    {
+      "candidate_id": "C0166",
+      "timestamp": "2026-07-09T17:35:00+00:00",
+      "symbol": "SOFI",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "2.051174220456438005991118305"
+    },
+    {
+      "candidate_id": "C0167",
+      "timestamp": "2026-07-09T17:55:00+00:00",
+      "symbol": "SOFI",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "2.041819631740770077754331319"
+    },
+    {
+      "candidate_id": "C0168",
+      "timestamp": "2026-07-09T18:10:00+00:00",
+      "symbol": "GOOGL",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.620344007409436284296069969"
+    },
+    {
+      "candidate_id": "C0169",
+      "timestamp": "2026-07-10T16:20:00+00:00",
+      "symbol": "AMD",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.657374722849780314556474321"
+    },
+    {
+      "candidate_id": "C0170",
+      "timestamp": "2026-07-10T16:20:00+00:00",
+      "symbol": "NVDA",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.950720362560608564465478628"
+    },
+    {
+      "candidate_id": "C0171",
+      "timestamp": "2026-07-10T16:50:00+00:00",
+      "symbol": "TSLA",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.606469104246985577669058243"
+    },
+    {
+      "candidate_id": "C0172",
+      "timestamp": "2026-07-10T17:00:00+00:00",
+      "symbol": "XOM",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.967024751506515270871696580"
+    },
+    {
+      "candidate_id": "C0173",
+      "timestamp": "2026-07-10T17:25:00+00:00",
+      "symbol": "AMD",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "2.252880482052467186734420585"
+    },
+    {
+      "candidate_id": "C0174",
+      "timestamp": "2026-07-13T16:35:00+00:00",
+      "symbol": "NVDA",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.883871585577784669739295615"
+    },
+    {
+      "candidate_id": "C0175",
+      "timestamp": "2026-07-14T17:00:00+00:00",
+      "symbol": "NVDA",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.916786464938858109461160125"
+    },
+    {
+      "candidate_id": "C0176",
+      "timestamp": "2026-07-14T17:30:00+00:00",
+      "symbol": "GOOGL",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "2.305266477451907915484074424"
+    },
+    {
+      "candidate_id": "C0177",
+      "timestamp": "2026-07-14T18:20:00+00:00",
+      "symbol": "AMZN",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "2.896925649061198080660655766"
+    },
+    {
+      "candidate_id": "C0178",
+      "timestamp": "2026-07-15T16:00:00+00:00",
+      "symbol": "NVDA",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.513201417612092608387595791"
+    },
+    {
+      "candidate_id": "C0179",
+      "timestamp": "2026-07-15T16:05:00+00:00",
+      "symbol": "NVDA",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "2.057116238883832244300030317"
+    },
+    {
+      "candidate_id": "C0180",
+      "timestamp": "2026-07-15T16:10:00+00:00",
+      "symbol": "SOFI",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.662384457220054006951978405"
+    },
+    {
+      "candidate_id": "C0181",
+      "timestamp": "2026-07-15T16:15:00+00:00",
+      "symbol": "SOFI",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.638955312190608328419044741"
+    },
+    {
+      "candidate_id": "C0182",
+      "timestamp": "2026-07-15T16:20:00+00:00",
+      "symbol": "SOFI",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.703300989704484669933290410"
+    },
+    {
+      "candidate_id": "C0183",
+      "timestamp": "2026-07-15T16:30:00+00:00",
+      "symbol": "SOFI",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.798979137205771006002982556"
+    },
+    {
+      "candidate_id": "C0184",
+      "timestamp": "2026-07-16T16:15:00+00:00",
+      "symbol": "AMD",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "2.459265380340670284097366287"
+    },
+    {
+      "candidate_id": "C0185",
+      "timestamp": "2026-07-16T16:20:00+00:00",
+      "symbol": "SOFI",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.978175284509401160721250272"
+    },
+    {
+      "candidate_id": "C0186",
+      "timestamp": "2026-07-16T16:40:00+00:00",
+      "symbol": "SOFI",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.672432200414315523889302073"
+    },
+    {
+      "candidate_id": "C0187",
+      "timestamp": "2026-07-16T17:55:00+00:00",
+      "symbol": "AMZN",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "2.337010182532457125736736502"
+    },
+    {
+      "candidate_id": "C0188",
+      "timestamp": "2026-07-16T18:05:00+00:00",
+      "symbol": "GOOGL",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "11.02671005892418539736922296"
+    },
+    {
+      "candidate_id": "C0189",
+      "timestamp": "2026-07-16T18:10:00+00:00",
+      "symbol": "AAPL",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "1.540497219055049326628494596"
+    },
+    {
+      "candidate_id": "C0190",
+      "timestamp": "2026-07-16T18:20:00+00:00",
+      "symbol": "GOOGL",
+      "mechanical_direction": "PUT",
+      "volume_ratio": "4.199583463109399111609596535"
+    },
+    {
+      "candidate_id": "C0191",
+      "timestamp": "2026-07-17T15:55:00+00:00",
+      "symbol": "AMD",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "2.351498815461586014383406479"
+    },
+    {
+      "candidate_id": "C0192",
+      "timestamp": "2026-07-17T16:00:00+00:00",
+      "symbol": "SOFI",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.694705118210284042313558030"
+    },
+    {
+      "candidate_id": "C0193",
+      "timestamp": "2026-07-17T16:15:00+00:00",
+      "symbol": "META",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "9.089508318953162756109042499"
+    },
+    {
+      "candidate_id": "C0194",
+      "timestamp": "2026-07-17T16:20:00+00:00",
+      "symbol": "XOM",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "2.108597667623078589583036106"
+    },
+    {
+      "candidate_id": "C0195",
+      "timestamp": "2026-07-17T16:25:00+00:00",
+      "symbol": "SOFI",
+      "mechanical_direction": "CALL",
+      "volume_ratio": "1.725583624550643880233656046"
+    }
+  ]
+}

@@ -1,0 +1,177 @@
+{
+  "schema_version": 1,
+  "event": "SHADOW_PILOT_SAMPLE",
+  "run_id": "20260720-1143",
+  "scheduled_for": "2026-07-20T11:43:00-07:00",
+  "started_at": "2026-07-20T18:43:24.208Z",
+  "observed_at": "2026-07-20T18:47:04.300Z",
+  "completed_at": "2026-07-20T18:47:04.301Z",
+  "run_duration_seconds": 220,
+  "timezone": "America/Los_Angeles",
+  "scheduler_ack": {
+    "status": "START_ACK_WRITTEN",
+    "path": "logs/scheduler/20260720-1143.start.json",
+    "positional_arguments_used": true
+  },
+  "overlap_check": {
+    "status": "CLEAR",
+    "previous_adjacent_run_status": "COMPLETED",
+    "unfinished_lock_files_found": 0,
+    "process_list_check": "NOT_REQUIRED_PREVIOUS_RUN_TERMINAL"
+  },
+  "safety": {
+    "system_mode": "READ_ONLY",
+    "live_trading_enabled": false,
+    "order_tools_enabled": false,
+    "kill_switch_engaged": true,
+    "kill_switch_reason": "TRADING_ARM_MARKER_ABSENT",
+    "allowed_mcp_scope": "ROBINHOOD_OFFICIAL_GET_ONLY",
+    "prohibited_tool_calls": 0,
+    "account_mutations": 0
+  },
+  "account_summary": {
+    "total_value_usd": 300,
+    "position_count": 0,
+    "unfinished_order_count": 0,
+    "account_identifier_saved": false,
+    "personal_information_saved": false
+  },
+  "sampling": {
+    "equity_quote_samples": 10,
+    "completed_5m_bar_samples": 620,
+    "option_chain_queries": 0,
+    "option_contract_samples": 0,
+    "incomplete_bars_excluded": 0,
+    "interpolated_bars_excluded": 0
+  },
+  "market": {
+    "regime": "BEARISH",
+    "regime_reasons": [],
+    "reference_directions": {
+      "SPY": [
+        "BEARISH",
+        "BEARISH"
+      ],
+      "QQQ": [
+        "BEARISH",
+        "BEARISH"
+      ]
+    },
+    "missing_underlyings": [],
+    "stale_quote_symbols": [
+      "SPY",
+      "QQQ",
+      "IWM",
+      "AAPL",
+      "MSFT",
+      "NVDA",
+      "AMZN",
+      "META",
+      "TSLA",
+      "AMD"
+    ],
+    "stale_quote_threshold_seconds": 10,
+    "latest_completed_bar_ended_at": "2026-07-20T18:40:00.000Z"
+  },
+  "decision_pipeline": {
+    "final_outcome": "NO_TRADE",
+    "mechanical_signal_count": 0,
+    "mechanical_direction_signal_count": 0,
+    "mechanical_none_count": 10,
+    "option_research_status": "NOT_RUN_ALL_MECHANICAL_SIGNALS_NONE_AFTER_INTEGRITY_GATE",
+    "virtual_candidate_created": false,
+    "virtual_position_created": false,
+    "real_order_created": false
+  },
+  "missing": [],
+  "stale": [
+    {
+      "code": "EQUITY_QUOTE_STALE_OVER_10S",
+      "symbol": "SPY",
+      "age_seconds": 118.472
+    },
+    {
+      "code": "EQUITY_QUOTE_STALE_OVER_10S",
+      "symbol": "QQQ",
+      "age_seconds": 118.649
+    },
+    {
+      "code": "EQUITY_QUOTE_STALE_OVER_10S",
+      "symbol": "IWM",
+      "age_seconds": 118.501
+    },
+    {
+      "code": "EQUITY_QUOTE_STALE_OVER_10S",
+      "symbol": "AAPL",
+      "age_seconds": 118.15
+    },
+    {
+      "code": "EQUITY_QUOTE_STALE_OVER_10S",
+      "symbol": "MSFT",
+      "age_seconds": 117.935
+    },
+    {
+      "code": "EQUITY_QUOTE_STALE_OVER_10S",
+      "symbol": "NVDA",
+      "age_seconds": 119.015
+    },
+    {
+      "code": "EQUITY_QUOTE_STALE_OVER_10S",
+      "symbol": "AMZN",
+      "age_seconds": 117.838
+    },
+    {
+      "code": "EQUITY_QUOTE_STALE_OVER_10S",
+      "symbol": "META",
+      "age_seconds": 119.128
+    },
+    {
+      "code": "EQUITY_QUOTE_STALE_OVER_10S",
+      "symbol": "TSLA",
+      "age_seconds": 117.742
+    },
+    {
+      "code": "EQUITY_QUOTE_STALE_OVER_10S",
+      "symbol": "AMD",
+      "age_seconds": 120.637
+    }
+  ],
+  "anomalies": [
+    {
+      "code": "TRUSTED_BAR_SOURCE_UPDATED_AT_MISSING",
+      "count": 10,
+      "severity": "STRICT_REJECT",
+      "detail": "Official historical payload does not provide per-bar source_updated_at."
+    }
+  ],
+  "rule_rejections": {
+    "VOLUME_CONFIRMATION_FAILED": 7,
+    "TRUSTED_BAR_SOURCE_UPDATED_AT_MISSING": 10,
+    "SIX_BAR_BREAKDOWN_FAILED": 3,
+    "BEARISH_EMA_ALIGNMENT_FAILED": 2,
+    "PRICE_NOT_BELOW_VWAP": 1
+  },
+  "rule_violations": {
+    "operational": 0,
+    "prohibited_tool_calls": 0,
+    "order_or_account_mutation_calls": 0,
+    "option_chain_queries_after_all_none": 0,
+    "account_identifier_persisted": 0,
+    "personal_information_persisted": 0,
+    "future_or_incomplete_bar_used": 0,
+    "trade_forced": 0
+  },
+  "time_budget": {
+    "new_mcp_queries_stopped_at": "2026-07-20T18:47:04.300Z",
+    "six_minute_query_cutoff_respected": true,
+    "eight_minute_total_budget_respected": true
+  },
+  "governance": {
+    "performance_eligibility": "PILOT_EXCLUDED_FROM_PERFORMANCE"
+  },
+  "outputs": {
+    "summary": "logs/pilot/2026-07-20/20260720-1143.summary.json",
+    "markets": "logs/pilot/2026-07-20/20260720-1143.market.jsonl"
+  },
+  "status": "COMPLETED"
+}

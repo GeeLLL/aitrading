@@ -1,0 +1,21 @@
+{
+  "fault_matrix_reasons": [],
+  "fault_matrix_safe": true,
+  "fault_scenarios_defined": 14,
+  "formal_shadow_authorized": false,
+  "live_mode_blocked": true,
+  "mode": "READ_ONLY_OFFHOURS_QUALIFICATION",
+  "note": "Local qualification is not market evidence or a profitability result.",
+  "offline_ready": true,
+  "parameter_evidence_status": "HYPOTHESIS_NOT_VALIDATED",
+  "parameter_inventory_complete": true,
+  "pending_market_checks": [
+    "official_raw_mcp_snapshot",
+    "raw_to_feature_reproducibility",
+    "official_instrument_session",
+    "official_account_cash_reconciliation",
+    "official_orders_positions_reconciliation",
+    "fresh_option_quote"
+  ],
+  "schema_version": 1
+}

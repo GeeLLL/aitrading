@@ -1,0 +1,120 @@
+{
+  "schema_version": 1,
+  "method": "UNDERLYING_DIRECTION_PROXY_NOT_OPTION_PNL",
+  "sessions": 29,
+  "candidate_events": 195,
+  "round_trip_friction_bps": 10,
+  "holding_minutes": 30,
+  "daily_cap_2_requires_distinct_symbols": true,
+  "results": [
+    {
+      "volume_ratio_minimum": "1.5",
+      "maximum_daily_entries": 1,
+      "sessions": 29,
+      "active_days": 27,
+      "trades": 27,
+      "no_trade_rate": 0.06896551724137934,
+      "direction_accuracy": 0.4444444444444444,
+      "cumulative_net_return": -0.03674731250636637,
+      "mean_net_return": -0.0013610115743098656,
+      "maximum_drawdown": 0.05290694899332807,
+      "worst_trade": -0.016616056096164854
+    },
+    {
+      "volume_ratio_minimum": "1.5",
+      "maximum_daily_entries": 2,
+      "sessions": 29,
+      "active_days": 27,
+      "trades": 50,
+      "no_trade_rate": 0.06896551724137934,
+      "direction_accuracy": 0.48,
+      "cumulative_net_return": -0.024646546808847643,
+      "mean_net_return": -0.0004929309361769528,
+      "maximum_drawdown": 0.07209715132055401,
+      "worst_trade": -0.016616056096164854
+    },
+    {
+      "volume_ratio_minimum": "2.0",
+      "maximum_daily_entries": 1,
+      "sessions": 29,
+      "active_days": 21,
+      "trades": 21,
+      "no_trade_rate": 0.27586206896551724,
+      "direction_accuracy": 0.38095238095238093,
+      "cumulative_net_return": -0.022669473189428267,
+      "mean_net_return": -0.001079498723306108,
+      "maximum_drawdown": 0.028480038295135568,
+      "worst_trade": -0.016616056096164854
+    },
+    {
+      "volume_ratio_minimum": "2.0",
+      "maximum_daily_entries": 2,
+      "sessions": 29,
+      "active_days": 21,
+      "trades": 36,
+      "no_trade_rate": 0.27586206896551724,
+      "direction_accuracy": 0.4166666666666667,
+      "cumulative_net_return": -0.01808481033407533,
+      "mean_net_return": -0.0005023558426132036,
+      "maximum_drawdown": 0.04490770018953184,
+      "worst_trade": -0.016616056096164854
+    },
+    {
+      "volume_ratio_minimum": "2.5",
+      "maximum_daily_entries": 1,
+      "sessions": 29,
+      "active_days": 15,
+      "trades": 15,
+      "no_trade_rate": 0.48275862068965514,
+      "direction_accuracy": 0.6,
+      "cumulative_net_return": 0.018368215374250714,
+      "mean_net_return": 0.0012245476916167143,
+      "maximum_drawdown": 0.012240095165878064,
+      "worst_trade": -0.007225499803998432
+    },
+    {
+      "volume_ratio_minimum": "2.5",
+      "maximum_daily_entries": 2,
+      "sessions": 29,
+      "active_days": 15,
+      "trades": 20,
+      "no_trade_rate": 0.48275862068965514,
+      "direction_accuracy": 0.55,
+      "cumulative_net_return": 0.002553825266304695,
+      "mean_net_return": 0.00012769126331523475,
+      "maximum_drawdown": 0.016536660302843578,
+      "worst_trade": -0.007225499803998432
+    },
+    {
+      "volume_ratio_minimum": "3.0",
+      "maximum_daily_entries": 1,
+      "sessions": 29,
+      "active_days": 9,
+      "trades": 9,
+      "no_trade_rate": 0.6896551724137931,
+      "direction_accuracy": 0.6666666666666666,
+      "cumulative_net_return": 0.022602759192334614,
+      "mean_net_return": 0.0025114176880371795,
+      "maximum_drawdown": 0.006742079720965912,
+      "worst_trade": -0.005945673165734629
+    },
+    {
+      "volume_ratio_minimum": "3.0",
+      "maximum_daily_entries": 2,
+      "sessions": 29,
+      "active_days": 9,
+      "trades": 11,
+      "no_trade_rate": 0.6896551724137931,
+      "direction_accuracy": 0.6363636363636364,
+      "cumulative_net_return": 0.017319528668277955,
+      "mean_net_return": 0.0015745026062070867,
+      "maximum_drawdown": 0.011434484635652893,
+      "worst_trade": -0.005945673165734629
+    }
+  ],
+  "limitations": [
+    "No historical option bid/ask, IV, Greeks, or exit quote is available.",
+    "The same data is used for comparison; results are exploratory, not a promotion decision.",
+    "Multiple-testing and small-sample risk remain."
+  ]
+}

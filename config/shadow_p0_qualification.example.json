@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "strategy_version": "strategy_v1.0",
+  "checks": {
+    "kill_switch_boundary": {"passed": false, "evidence": []},
+    "unknown_contract_fail_closed": {"passed": false, "evidence": []},
+    "trusted_data_plane": {"passed": false, "evidence": []},
+    "bar_time_integrity": {"passed": false, "evidence": []},
+    "durable_state_reconciliation": {"passed": false, "evidence": []},
+    "cash_settlement_ledger": {"passed": false, "evidence": []},
+    "experiment_reporting_integrity": {"passed": false, "evidence": []},
+    "instrument_session_integrity": {"passed": false, "evidence": []}
+  }
+}

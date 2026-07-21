@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "sample_id": "example-2026-07-17T15:00:00Z",
+  "received_at": "2026-07-17T15:00:00Z",
+  "source_updated_at": "2026-07-17T14:59:59Z",
+  "completed_live_trades": 0,
+  "market": {
+    "market_open": true,
+    "within_entry_window": true,
+    "near_forced_exit": false
+  },
+  "account": {
+    "account_type": "cash",
+    "equity": "300",
+    "buying_power": "300",
+    "option_position_count": 0,
+    "equity_position_count": 0,
+    "open_option_order_count": 0,
+    "open_equity_order_count": 0,
+    "consecutive_losses": 0,
+    "entries_today": 0,
+    "settled_cash": "300",
+    "unsettled_cash": "0",
+    "reserved_cash": "0"
+  },
+  "market_bars": [
+    {"symbol": "SPY", "close": "101", "vwap": "100", "ema_fast": "101", "ema_slow": "100", "interval_minutes": 5, "started_at": "2026-07-17T14:45:00Z", "ended_at": "2026-07-17T14:50:00Z", "source_updated_at": "2026-07-17T14:50:01Z", "received_at": "2026-07-17T14:50:02Z", "completed": true},
+    {"symbol": "SPY", "close": "102", "vwap": "100", "ema_fast": "101", "ema_slow": "100", "interval_minutes": 5, "started_at": "2026-07-17T14:50:00Z", "ended_at": "2026-07-17T14:55:00Z", "source_updated_at": "2026-07-17T14:55:01Z", "received_at": "2026-07-17T14:55:02Z", "completed": true},
+    {"symbol": "QQQ", "close": "201", "vwap": "200", "ema_fast": "201", "ema_slow": "200", "interval_minutes": 5, "started_at": "2026-07-17T14:45:00Z", "ended_at": "2026-07-17T14:50:00Z", "source_updated_at": "2026-07-17T14:50:01Z", "received_at": "2026-07-17T14:50:02Z", "completed": true},
+    {"symbol": "QQQ", "close": "202", "vwap": "200", "ema_fast": "201", "ema_slow": "200", "interval_minutes": 5, "started_at": "2026-07-17T14:50:00Z", "ended_at": "2026-07-17T14:55:00Z", "source_updated_at": "2026-07-17T14:55:01Z", "received_at": "2026-07-17T14:55:02Z", "completed": true}
+  ],
+  "underlying": {
+    "symbol": "SOFI", "close": "17.60", "vwap": "17.30", "ema_fast": "17.50",
+    "ema_slow": "17.35", "breakout_high": "17.55", "breakdown_low": "17.00",
+    "current_volume": 1800, "average_volume": "1000"
+  },
+  "option": {
+    "underlying": "SOFI", "option_type": "CALL", "strike": "17.5",
+    "expiration": "2026-07-24", "bid": "0.47", "ask": "0.48", "delta": "0.47",
+    "quote_updated_at": "2026-07-17T14:59:59Z",
+    "quote_received_at": "2026-07-17T15:00:00Z", "volume": 6500,
+    "open_interest": 5300, "earnings_date": "2026-07-29"
+  }
+}

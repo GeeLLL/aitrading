@@ -1,0 +1,19 @@
+schema_version = 1
+status = "SHADOW_RESEARCH"
+
+# Selection is based on underlying quality and option-market liquidity, never
+# on finding the cheapest contract. Membership must be revalidated with
+# official Robinhood read-only data before each formal experiment period.
+symbols = ["SPY", "QQQ", "IWM", "AAPL", "MSFT", "NVDA", "AMZN", "META", "TSLA", "AMD"]
+
+maximum_full_option_chain_evaluations_per_cycle = 3
+underlying_bar_interval_minutes = 5
+completed_bar_only = true
+ranking_primary = "QUALIFIED_SIGNAL_THEN_VOLUME_RATIO"
+allow_llm_to_add_symbols = false
+allow_price_based_small_cap_bias = false
+
+budget_research_bands_usd = [75, 120, 200, 300]
+stage_1_eligibility_budget_usd = 75
+budget_band_must_not_change_underlying_ranking = true
+

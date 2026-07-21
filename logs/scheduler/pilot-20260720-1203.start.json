@@ -1,0 +1,18 @@
+{
+  "run_id": "20260720-1203",
+  "scheduled_for": "2026-07-20T12:03:00-07:00",
+  "started_at": "2026-07-20T12:03:20-07:00",
+  "run_type": "SHADOW_PILOT_SAMPLE",
+  "status": "COMPLETED",
+  "mode": "READ_ONLY",
+  "live": false,
+  "order_tools": false,
+  "kill_switch": "engaged",
+  "performance_label": "PILOT_EXCLUDED_FROM_PERFORMANCE",
+  "scheduler_ack_status": "START_ACK_WRITTEN",
+  "completed_at": "2026-07-20T19:06:40.000Z",
+  "run_duration_seconds": 200,
+  "final_outcome": "NO_TRADE",
+  "option_chain_queries": 0,
+  "output_summary": "logs/pilot/2026-07-20/20260720-1203.summary.json"
+}

@@ -1,0 +1,7 @@
+{
+  "acknowledged_at": "2026-07-20T23:43:06.945338+00:00",
+  "run_id": "launchd-canary-20260720-1643",
+  "scheduled_for": "2026-07-20T23:43:00+00:00",
+  "schema_version": 1,
+  "status": "STARTED"
+}

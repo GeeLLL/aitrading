@@ -1,0 +1,180 @@
+{
+  "schema_version": 1,
+  "event": "SHADOW_PILOT_SAMPLE",
+  "run_id": "20260720-1103",
+  "scheduled_for": "2026-07-20T11:03:00-07:00",
+  "started_at": "2026-07-20T11:03:53-07:00",
+  "observed_at": "2026-07-20T18:10:40.281Z",
+  "completed_at": "2026-07-20T18:13:33Z",
+  "run_duration_seconds": 580,
+  "timezone": "America/Los_Angeles",
+  "scheduler_ack": {
+    "status": "START_ACK_WRITTEN",
+    "path": "logs/scheduler/20260720-1103.start.json",
+    "positional_arguments_used": true
+  },
+  "safety": {
+    "system_mode": "READ_ONLY",
+    "live_trading_enabled": false,
+    "order_tools_enabled": false,
+    "kill_switch_engaged": true,
+    "kill_switch_reason": "TRADING_ARM_MARKER_ABSENT",
+    "allowed_mcp_scope": "ROBINHOOD_OFFICIAL_READ_ONLY_ONLY",
+    "prohibited_tool_calls": 0,
+    "account_mutations": 0
+  },
+  "account_summary": {
+    "agentic_account": true,
+    "account_type": "cash",
+    "total_value_usd": 300,
+    "cash_usd": 300,
+    "buying_power_usd": 300,
+    "equity_position_count": 0,
+    "option_position_count": 0,
+    "unfinished_equity_order_count": 0,
+    "unfinished_option_order_count": 0,
+    "account_identifier_saved": false
+  },
+  "market": {
+    "status": "REGULAR_SESSION_OPEN_INFERRED_FROM_ACTIVE_QUOTES_AND_REG_BARS",
+    "regime": "BEARISH",
+    "regime_reasons": [],
+    "reference_directions": {
+      "SPY": [
+        "BEARISH",
+        "BEARISH"
+      ],
+      "QQQ": [
+        "BEARISH",
+        "BEARISH"
+      ]
+    },
+    "universe_sample_count": 10,
+    "completed_5m_bar_samples": 210,
+    "full_session_completed_bar_count": 560,
+    "missing_underlyings": [],
+    "incomplete_bars_used": 0,
+    "future_bars_used": 0
+  },
+  "universe_selection": {
+    "policy": "QUALIFIED_SIGNAL_THEN_VOLUME_RATIO",
+    "qualified_ranked_underlyings": [],
+    "research_preview_top3": [
+      {
+        "symbol": "AAPL",
+        "direction": "NO_TRADE",
+        "reasons": [
+          "VOLUME_CONFIRMATION_FAILED"
+        ],
+        "volume_ratio": 1.108024,
+        "complete": true,
+        "research_only": true
+      },
+      {
+        "symbol": "AMD",
+        "direction": "NO_TRADE",
+        "reasons": [
+          "VOLUME_CONFIRMATION_FAILED"
+        ],
+        "volume_ratio": 1.057341,
+        "complete": true,
+        "research_only": true
+      },
+      {
+        "symbol": "TSLA",
+        "direction": "NO_TRADE",
+        "reasons": [
+          "VOLUME_CONFIRMATION_FAILED"
+        ],
+        "volume_ratio": 0.93172,
+        "complete": true,
+        "research_only": true
+      }
+    ],
+    "option_chain_research_symbols": [
+      "AMD",
+      "IWM",
+      "AAPL"
+    ],
+    "option_research_selection_as_of": "2026-07-20T18:05:00Z",
+    "option_research_selection_note": "Scope was locked from the initial completed-bar ranking; after the final market refresh, no additional or replacement option-chain query was allowed.",
+    "maximum_chain_evaluations": 3,
+    "chain_evaluations": 3,
+    "budget_did_not_change_ranking": true
+  },
+  "option_research": {
+    "quote_samples": 90,
+    "missing_field_records": 0,
+    "stale_at_receipt_over_10s": 4,
+    "stale_at_final_decision_over_10s": 90,
+    "wide_spread_over_5pct": 43,
+    "delta_outside_band": 26,
+    "volume_below_500": 75,
+    "open_interest_below_500": 56,
+    "isolated_contracts_passing_at_receipt": 6,
+    "affordable_sample_counts": {
+      "75": 9,
+      "120": 15,
+      "200": 24,
+      "300": 36
+    }
+  },
+  "decision_pipeline": {
+    "final_outcome": "NO_TRADE",
+    "mechanical_signal_count": 0,
+    "strict_candidate_count": 0,
+    "ai_blind_candidate_count": 0,
+    "ai_filter_status": "NOT_RUN_EMPTY_SET",
+    "forced_real_trade": false,
+    "forced_simulated_trade": false,
+    "future_data_used": false
+  },
+  "governance": {
+    "formal_shadow_authorized": false,
+    "strategy_status": "DESIGN",
+    "universe_status": "SHADOW_RESEARCH",
+    "performance_eligibility": "PILOT_EXCLUDED_FROM_PERFORMANCE"
+  },
+  "anomalies": [
+    {
+      "code": "TRUSTED_BAR_SOURCE_UPDATED_AT_MISSING",
+      "count": 10,
+      "severity": "STRICT_REJECT",
+      "detail": "Official historical bar payload lacks per-bar source_updated_at; research calculations retained but formal strict evidence rejected."
+    },
+    {
+      "code": "OPTION_QUOTE_STALE_AT_RECEIPT",
+      "count": 4,
+      "severity": "FILTER_REJECT"
+    },
+    {
+      "code": "OPTION_QUOTE_STALE_AT_FINAL_DECISION",
+      "count": 90,
+      "severity": "FILTER_REJECT"
+    },
+    {
+      "code": "WIDE_OPTION_SPREAD",
+      "count": 43,
+      "severity": "FILTER_REJECT"
+    }
+  ],
+  "rule_violations": {
+    "operational": 0,
+    "prohibited_tool_calls": 0,
+    "chain_cap_exceeded": 0,
+    "account_identifier_persisted": 0,
+    "future_or_incomplete_bar_used": 0,
+    "trade_forced": 0
+  },
+  "query_audit": {
+    "additional_queries_after_stop_directive": 0,
+    "contract_scope_expanded_after_stop_directive": false,
+    "order_review_cancel_or_account_mutation_calls": 0
+  },
+  "outputs": {
+    "summary": "logs/pilot/2026-07-20/20260720-1103.summary.json",
+    "markets": "logs/pilot/2026-07-20/20260720-1103.market.jsonl",
+    "options": "logs/pilot/2026-07-20/20260720-1103.options.jsonl",
+    "blind_decisions": "logs/pilot/2026-07-20/20260720-1103.blind-decisions.jsonl"
+  }
+}

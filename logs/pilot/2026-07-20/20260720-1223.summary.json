@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "event": "SHADOW_PILOT_SAMPLE",
+  "run_id": "20260720-1223",
+  "scheduled_for": "2026-07-20T12:23:00-07:00",
+  "started_at": "2026-07-20T19:23:24.208Z",
+  "completed_at": "2026-07-20T19:24:48.104Z",
+  "run_duration_seconds": 84,
+  "timezone": "America/Los_Angeles",
+  "status": "FAILED",
+  "pilot_excluded_from_performance": true,
+  "scheduler_ack": {
+    "status": "ACK_FAILED",
+    "path": null,
+    "failure_path": "logs/scheduler/20260720-1223.ack-failed.json",
+    "reason_code": "SCHEDULER_ACK_IMPORT_FAILURE",
+    "positional_arguments_used": true,
+    "flags_used": false
+  },
+  "overlap_check": {
+    "status": "CLEAR",
+    "previous_adjacent_run_id": "20260720-1203",
+    "previous_adjacent_run_status": "COMPLETED",
+    "unfinished_lock_files_found": 0
+  },
+  "safety": {
+    "system_mode": "READ_ONLY",
+    "live_trading_enabled": false,
+    "order_tools_enabled": false,
+    "kill_switch_engaged": true,
+    "kill_switch_reason": "TRADING_ARM_MARKER_ABSENT",
+    "allowed_mcp_scope": "ROBINHOOD_OFFICIAL_GET_ONLY",
+    "mcp_calls": 0,
+    "prohibited_tool_calls": 0,
+    "account_mutations": 0,
+    "order_tool_calls": 0
+  },
+  "account_summary": {
+    "total_value_usd": null,
+    "position_count": null,
+    "unfinished_order_count": null,
+    "account_identifier_saved": false,
+    "personal_information_saved": false,
+    "reason": "NOT_QUERIED_ACK_FAILED"
+  },
+  "sampling": {
+    "equity_quote_samples": 0,
+    "completed_5m_bar_samples": 0,
+    "option_chain_queries": 0,
+    "option_contract_samples": 0
+  },
+  "decision_pipeline": {
+    "final_outcome": "NO_TRADE",
+    "terminal_reason": "SCHEDULER_ACK_IMPORT_FAILURE",
+    "mechanical_signal_count": 0,
+    "option_research_status": "NOT_RUN_ACK_FAILED",
+    "virtual_candidate_created": false,
+    "virtual_position_created": false,
+    "real_order_created": false
+  },
+  "rejection_reasons": [
+    "SCHEDULER_ACK_IMPORT_FAILURE"
+  ],
+  "anomalies": [
+    {
+      "code": "PYTHON_DATACLASS_FIELD_ORDER_INVALID",
+      "component": "strategy.shadow_pipeline.OptionCandidate",
+      "detail": "non-default field volume follows default field quote_received_at"
+    }
+  ],
+  "violations": [],
+  "budget": {
+    "total_budget_seconds": 480,
+    "stop_new_mcp_queries_at_seconds": 360,
+    "new_mcp_queries_stopped": true,
+    "completed_within_budget": true
+  }
+}

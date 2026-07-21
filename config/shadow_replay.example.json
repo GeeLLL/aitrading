@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "decision_input": "shadow_input.example.json",
+  "entry_quotes": [
+    {
+      "sample_id": "entry-1",
+      "quote_updated_at": "2026-07-17T15:00:00Z",
+      "received_at": "2026-07-17T15:00:01Z",
+      "ask": "0.47",
+      "timed_out": false
+    }
+  ],
+  "position_observations": [
+    {
+      "sample_id": "position-1",
+      "quote_updated_at": "2026-07-17T15:09:59Z",
+      "observed_at": "2026-07-17T15:10:00Z",
+      "bid": "0.61",
+      "mark": "0.62",
+      "underlying_vwap_still_valid": true,
+      "force_exit_due": false,
+      "emergency_exit_due": false
+    }
+  ],
+  "finish_day": true
+}
