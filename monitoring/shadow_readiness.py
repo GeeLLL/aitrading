@@ -72,6 +72,39 @@ def _valid_json(path: Path) -> bool:
     return True
 
 
+def load_market_check_evidence(path: str | Path) -> dict[str, bool]:
+    """Load market-time check results; unsupported claims fail closed.
+
+    Mirrors load_p0_qualification: a check may be reported satisfied only with
+    a non-empty evidence list, and the check set must match exactly.
+    """
+
+    try:
+        raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError("MARKET_CHECK_EVIDENCE_INVALID") from error
+    if not isinstance(raw, dict) or raw.get("schema_version") != 1:
+        raise ValueError("MARKET_CHECK_EVIDENCE_SCHEMA_INVALID")
+    checks_raw = raw.get("checks")
+    if not isinstance(checks_raw, dict) or set(checks_raw) != set(MONDAY_MARKET_CHECKS):
+        raise ValueError("MARKET_CHECK_SET_INVALID")
+    result: dict[str, bool] = {}
+    for name in MONDAY_MARKET_CHECKS:
+        check = checks_raw[name]
+        if not isinstance(check, dict):
+            raise ValueError(f"MARKET_CHECK_INVALID:{name}")
+        passed = check.get("passed") is True
+        evidence = check.get("evidence")
+        if passed and (
+            not isinstance(evidence, list)
+            or not evidence
+            or not all(isinstance(item, str) and item.strip() for item in evidence)
+        ):
+            raise ValueError(f"MARKET_CHECK_EVIDENCE_MISSING:{name}")
+        result[name] = passed
+    return result
+
+
 def build_shadow_readiness(
     *,
     root: str | Path = ".",
@@ -102,7 +135,8 @@ def build_shadow_readiness(
     else:
         blockers.append("ORDER_TOOLS_NOT_DISABLED")
 
-    kill = KillSwitch(project / "state/TRADING_ARMED").status()
+    # Must reference the same marker path as the real gate (KillSwitch default).
+    kill = KillSwitch(project / "state/trading_armed").status()
     if kill.engaged:
         passed.append("KILL_SWITCH_ENGAGED")
     else:

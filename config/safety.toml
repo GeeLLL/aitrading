@@ -50,3 +50,13 @@ force_exit_before_close_minutes = 30
 emergency_exit_before_close_minutes = 15
 
 shadow_days_required = 5
+
+# Deterministic friction applied to every simulated exit so recorded net P&L
+# is never fee-free. Deliberately conservative overestimates; exact
+# Robinhood/venue fee calibration remains a required market-time task.
+[friction_model]
+status = "CONSERVATIVE_UNCALIBRATED"
+per_contract_fee_usd = 0.15
+regulatory_exit_fee_usd = 0.10
+exit_latency_slippage_ticks = 1
+option_tick_size_usd = 0.01

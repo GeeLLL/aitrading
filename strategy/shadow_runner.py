@@ -161,6 +161,22 @@ class ShadowRunner:
             self.pending_limit_price = None
         return False
 
+    def _exit_friction_usd(self) -> Decimal:
+        """Deterministic single-contract round-trip friction from safety config.
+
+        The friction_model section is mandatory (validate_safety_config), so a
+        missing section is a hard error rather than silently fee-free P&L.
+        """
+
+        model = self.safety_config["friction_model"]
+        per_contract = Decimal(str(model["per_contract_fee_usd"]))
+        regulatory_exit = Decimal(str(model["regulatory_exit_fee_usd"]))
+        slippage_ticks = Decimal(str(model["exit_latency_slippage_ticks"]))
+        tick_size = Decimal(str(model["option_tick_size_usd"]))
+        fees = per_contract * Decimal("2") + regulatory_exit
+        exit_slippage = slippage_ticks * tick_size * Decimal("100")
+        return fees + exit_slippage
+
     def observe_position(self, observation: PositionObservation) -> ExitDecision:
         """Evaluate and record one monitoring cycle for a simulated open position."""
 
@@ -223,14 +239,18 @@ class ShadowRunner:
             self.recorder.append(ShadowEventType.POSITION_SNAPSHOT, common)
         elif decision.action is ExitAction.EXIT:
             assert decision.simulated_exit_price is not None
-            pnl = (decision.simulated_exit_price - self.entry_fill_price) * Decimal("100")
+            gross = (decision.simulated_exit_price - self.entry_fill_price) * Decimal("100")
+            friction = self._exit_friction_usd()
+            net = gross - friction
             return_pct = (decision.simulated_exit_price / self.entry_fill_price - Decimal("1")) * Decimal("100")
             self.recorder.append(
                 ShadowEventType.EXITED,
                 {
                     **common,
                     "exit_price": decision.simulated_exit_price,
-                    "simulated_pnl_usd": pnl,
+                    "simulated_gross_pnl_usd": gross,
+                    "friction_usd": friction,
+                    "simulated_pnl_usd": net,
                     "simulated_return_pct": return_pct,
                 },
             )

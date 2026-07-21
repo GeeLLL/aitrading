@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "note": "Copy this file, complete every check during market hours with concrete evidence paths/hashes, then pass it to: python3 main.py shadow-readiness --market-checks PATH. A check marked passed without non-empty evidence strings is rejected.",
+  "checks": {
+    "official_raw_mcp_snapshot": {"passed": false, "evidence": []},
+    "raw_to_feature_reproducibility": {"passed": false, "evidence": []},
+    "official_instrument_session": {"passed": false, "evidence": []},
+    "official_account_cash_reconciliation": {"passed": false, "evidence": []},
+    "official_orders_positions_reconciliation": {"passed": false, "evidence": []},
+    "fresh_option_quote": {"passed": false, "evidence": []}
+  }
+}

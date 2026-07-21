@@ -16,7 +16,7 @@ accounting, order validity, and execution state.
 - Formal multi-day Shadow evidence collection: not started
 - System mode: `READ_ONLY`
 - Live trading: disabled
-- Robinhood order tools: disabled by Codex MCP allowlist
+- Robinhood order tools: never allowlisted in the Claude Code CLI runtime
 - Local kill switch: engaged by default
 - Automated local safety/research tests: 230 passing as of 2026-07-20 post-close
 
@@ -55,7 +55,11 @@ Engage the local emergency stop:
 python3 main.py kill
 ```
 
-There is intentionally no command to arm trading during READ_ONLY development.
+`kill` both engages the kill switch and writes `state/automation_halt.json`,
+which stops every scheduled Shadow/Pilot worker run from starting. Resuming
+requires the owner to delete that marker manually after review; there is
+intentionally no command to clear it, and no command to arm trading during
+READ_ONLY development.
 
 Run all local tests:
 
@@ -78,6 +82,19 @@ Expected runs are pre-registered independently of the scheduled worker:
 python3 main.py scheduler-expect shadow-20260721-0703 2026-07-21T07:03:00-07:00
 ```
 
+Each observation day must be prepared explicitly before it can run. Register
+the complete daily slot table and generate the matching single-date launchd
+plist from the same shared schedule:
+
+```bash
+python3 main.py scheduler-expect-day 2026-07-22
+python3 scripts/generate_shadow_worker_plist.py 2026-07-22 > /tmp/shadow-worker.plist
+```
+
+Without both steps the worker will not fire and the watchdog has nothing to
+verify for that date. An unresolved scheduler incident (one without an owner
+`resolution` block) now deterministically blocks every new worker run.
+
 `scripts/watchdog_tick.py` scans these expectations every minute when the
 macOS LaunchAgent template in `config/` is installed. A missed, malformed, or
 late ACK creates an immutable incident record, keeps new entries blocked, and
@@ -88,6 +105,21 @@ Report Monday Shadow readiness without activating anything:
 ```bash
 python3 main.py shadow-readiness
 ```
+
+After completing the six market-time checks with concrete evidence (see
+`config/market_checks.example.json`), the same report can consume them:
+
+```bash
+python3 main.py shadow-readiness --market-checks logs/qualification/market_checks_YYYYMMDD.json
+```
+
+`monday_go` becomes true only when offline readiness, all six evidenced market
+checks, and the persisted owner authorization record are all present. Simulated
+exits now record `simulated_gross_pnl_usd`, `friction_usd`, and a net
+`simulated_pnl_usd` using the conservative `[friction_model]` in
+`config/safety.toml`; experiment gates evaluate the net figure, and non-pilot
+sessions without a verified `state/shadow_authorization.json` are quarantined
+as `unauthorized_sessions`.
 
 The operating sequence and automatic `NO_GO` conditions are documented in
 [`MONDAY_SHADOW_RUNBOOK.md`](MONDAY_SHADOW_RUNBOOK.md).
@@ -140,8 +172,8 @@ This exercises local safety/fault definitions and writes a sanitized report to
 `logs/qualification/`. It is not a substitute for official market integration,
 formal Shadow evidence, or the owner emergency-stop rehearsal.
 
-Collect one normalized snapshot using the authorized Codex CLI and official
-Robinhood read-only MCP. This command can consume Codex usage and requires the
+Collect one normalized snapshot using the authorized Claude Code CLI and
+official Robinhood read-only MCP. This command consumes Claude usage and requires the
 existing OAuth session; it never enables order tools:
 
 ```bash

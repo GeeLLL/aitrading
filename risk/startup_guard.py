@@ -93,24 +93,51 @@ def validate_safety_config(config: dict[str, Any]) -> None:
         config.get("max_daily_entries") == HARD_MAX_DAILY_ENTRIES,
         "Daily entries must remain exactly 1.",
     )
+    def numeric(key: str) -> float:
+        value = config.get(key)
+        require(
+            isinstance(value, (int, float)) and not isinstance(value, bool),
+            f"{key} must be present and numeric.",
+        )
+        return value
+
     require(
-        config.get("account_equity_kill_threshold_usd")
+        numeric("account_equity_kill_threshold_usd")
         >= HARD_EQUITY_KILL_THRESHOLD_USD,
         "Equity kill threshold cannot be below $225.",
     )
     require(
-        config.get("max_consecutive_losses")
+        numeric("max_consecutive_losses")
         <= HARD_MAX_CONSECUTIVE_LOSSES,
         "Consecutive-loss limit cannot exceed 3.",
     )
     require(
-        config.get("minimum_dte") >= HARD_MINIMUM_DTE,
+        numeric("minimum_dte") >= HARD_MINIMUM_DTE,
         "Minimum DTE cannot be below 7.",
     )
     require(
-        config.get("maximum_dte") <= HARD_MAXIMUM_DTE,
+        numeric("maximum_dte") <= HARD_MAXIMUM_DTE,
         "Maximum DTE cannot exceed 21.",
     )
+
+    friction = config.get("friction_model")
+    require(
+        isinstance(friction, dict),
+        "friction_model section is required for net-P&L accounting.",
+    )
+    for key in (
+        "per_contract_fee_usd",
+        "regulatory_exit_fee_usd",
+        "exit_latency_slippage_ticks",
+        "option_tick_size_usd",
+    ):
+        value = friction.get(key)
+        require(
+            isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and value >= 0,
+            f"friction_model.{key} must be a non-negative number.",
+        )
 
     allowed_positions = set(config.get("allowed_opening_positions", []))
     require(

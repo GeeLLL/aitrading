@@ -15,9 +15,17 @@ def run_one_shot_pilot(
     input_path: str | Path,
     *,
     log_root: str | Path = "logs/shadow",
+    pilot_mode: bool = True,
+    shadow_authorized: bool = False,
 ) -> dict[str, Any]:
-    """Run one explicit, read-only pilot decision and close it without a fill."""
+    """Run one explicit, read-only decision and close it without a fill.
 
+    pilot_mode=False requires shadow_authorized=True, which callers may set
+    only after independently loading the persisted authorization record.
+    """
+
+    if not pilot_mode and not shadow_authorized:
+        raise ValueError("FORMAL_SHADOW_REQUIRES_AUTHORIZATION_RECORD")
     sample_id, source_updated_at, snapshot = load_shadow_input(input_path)
     safety = load_safety_config("config/safety.toml")
     validate_safety_config(safety)
@@ -32,7 +40,8 @@ def run_one_shot_pilot(
         recorder=recorder,
         safety_config=safety,
         strategy_policy=policy,
-        pilot_mode=True,
+        pilot_mode=pilot_mode,
+        shadow_authorized=shadow_authorized,
     )
     controller = ShadowSessionController(runner)
     controller.start()

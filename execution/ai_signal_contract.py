@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from enum import Enum
 from typing import Any, Mapping
 
@@ -36,8 +36,19 @@ def parse_ai_signal(value: Mapping[str, Any]) -> AiSignal:
         raise ValueError("AI signal fields do not match the versioned schema")
     if not isinstance(value["abstain"], bool) or not isinstance(value["reason_codes"], list):
         raise ValueError("Invalid AI signal types")
-    direction = AiDirection(str(value["direction"]))
-    confidence = Decimal(str(value["confidence"]))
+    try:
+        direction = AiDirection(str(value["direction"]))
+    except ValueError as error:
+        raise ValueError("Unknown AI direction") from error
+    raw_confidence = value["confidence"]
+    if isinstance(raw_confidence, bool) or not isinstance(raw_confidence, (int, float, str)):
+        raise ValueError("AI confidence must be numeric")
+    try:
+        confidence = Decimal(str(raw_confidence))
+    except InvalidOperation as error:
+        raise ValueError("AI confidence must be numeric") from error
+    if not confidence.is_finite():
+        raise ValueError("AI confidence must be finite")
     if not Decimal("0") <= confidence <= Decimal("1"):
         raise ValueError("AI confidence must be between zero and one")
     candidate = str(value["candidate"]).strip().upper()

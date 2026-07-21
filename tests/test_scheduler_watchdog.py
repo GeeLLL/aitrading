@@ -12,6 +12,7 @@ from monitoring.scheduler_watchdog import (
     check_expected_run,
     register_expected_run,
     scan_expected_runs,
+    unresolved_incident_ids,
 )
 
 
@@ -167,6 +168,38 @@ class SchedulerWatchdogTests(unittest.TestCase):
             self.assertEqual(1, len(results))
             self.assertTrue(results[0].health.healthy)
             self.assertFalse(incidents.exists())
+
+
+class UnresolvedIncidentTests(unittest.TestCase):
+    def write_incident(self, directory: Path, run_id: str, payload: dict) -> Path:
+        path = directory / f"{run_id}.scheduler-incident.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        return path
+
+    def test_incident_without_resolution_blocks(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            incidents = Path(directory)
+            self.write_incident(incidents, "missed-run", {"run_id": "missed-run", "severity": "CRITICAL"})
+            self.assertEqual(("missed-run",), unresolved_incident_ids(incidents))
+
+    def test_resolved_incident_does_not_block(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            incidents = Path(directory)
+            self.write_incident(incidents, "fixed-run", {
+                "run_id": "fixed-run",
+                "resolution": {"status": "RESOLVED_BY_SCHEDULER_MIGRATION"},
+            })
+            self.assertEqual((), unresolved_incident_ids(incidents))
+
+    def test_unreadable_incident_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            incidents = Path(directory)
+            (incidents / "broken.scheduler-incident.json").write_text("{not json", encoding="utf-8")
+            self.assertEqual(("broken.scheduler-incident.json",), unresolved_incident_ids(incidents))
+
+    def test_missing_directory_means_no_incidents(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertEqual((), unresolved_incident_ids(Path(directory) / "absent"))
 
 
 if __name__ == "__main__":

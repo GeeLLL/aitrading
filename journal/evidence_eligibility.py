@@ -11,14 +11,25 @@ class EvidenceEligibility:
     reasons: tuple[str, ...]
 
 
-def classify_shadow_evidence(record: Mapping[str, object]) -> EvidenceEligibility:
-    """Classify one run before it can enter strategy-performance statistics."""
+def classify_shadow_evidence(
+    record: Mapping[str, object],
+    *,
+    authorization_verified: bool = False,
+) -> EvidenceEligibility:
+    """Classify one run before it can enter strategy-performance statistics.
+
+    authorization_verified must come from independently loading the persisted
+    state/shadow_authorization.json record. A run's own governance strings are
+    written by the collection agent and are never sufficient on their own.
+    """
     reasons: list[str] = []
     governance = record.get("governance") if isinstance(record.get("governance"), dict) else {}
     safety = record.get("safety") if isinstance(record.get("safety"), dict) else {}
     violations = record.get("rule_violations") if isinstance(record.get("rule_violations"), dict) else {}
     if governance.get("formal_shadow_authorized") is not True:
         reasons.append("FORMAL_SHADOW_NOT_AUTHORIZED")
+    elif not authorization_verified:
+        reasons.append("AUTHORIZATION_RECORD_NOT_VERIFIED")
     if governance.get("performance_eligibility") != "FORMAL_SHADOW_ELIGIBLE":
         reasons.append("PERFORMANCE_POPULATION_NOT_FORMAL")
     if safety.get("system_mode") != "READ_ONLY":

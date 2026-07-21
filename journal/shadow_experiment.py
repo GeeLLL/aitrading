@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from journal.shadow_review import review_shadow_day
+from monitoring.shadow_activation import load_shadow_authorization
 
 
 @dataclass(frozen=True)
@@ -18,6 +19,8 @@ class ShadowExperimentReport:
     eligible_days: int
     completed_trades: int
     pilot_decisions: int
+    unauthorized_sessions: int
+    formal_shadow_authorized: bool
     total_errors: int
     hard_rule_violations: int
     net_pnl_usd: Decimal
@@ -36,6 +39,8 @@ class ShadowExperimentReport:
             "eligible_days": self.eligible_days,
             "completed_trades": self.completed_trades,
             "pilot_decisions": self.pilot_decisions,
+            "unauthorized_sessions": self.unauthorized_sessions,
+            "formal_shadow_authorized": self.formal_shadow_authorized,
             "total_errors": self.total_errors,
             "hard_rule_violations": self.hard_rule_violations,
             "net_pnl_usd": str(self.net_pnl_usd),
@@ -59,7 +64,12 @@ def build_shadow_experiment_report(
     minimum_trades: int = 30,
     minimum_profit_factor: Decimal = Decimal("1.20"),
     maximum_drawdown_pct: Decimal = Decimal("15"),
+    strategy_version: str = "strategy_v1.0",
+    authorization_path: str | Path = "state/shadow_authorization.json",
 ) -> ShadowExperimentReport:
+    # Formal strategy performance must be backed by the persisted authorization
+    # record, not by how a session log labels itself.
+    formal_authorized = load_shadow_authorization(strategy_version, authorization_path)
     root_path = Path(root)
     dated_dirs: list[tuple[date, Path]] = []
     if root_path.exists():
@@ -76,6 +86,7 @@ def build_shadow_experiment_report(
     eligible_days = 0
     trades = 0
     pilot_decisions = 0
+    unauthorized_sessions = 0
     errors = 0
     violations = 0
     timestamped_pnl: list[tuple[str, Decimal]] = []
@@ -99,9 +110,15 @@ def build_shadow_experiment_report(
                     if not isinstance(recorded_at, str):
                         raise ValueError(f"EXITED event missing recorded_at: {log_path}")
                     session_pnl.append((recorded_at, Decimal(str(event["payload"]["simulated_pnl_usd"]))))
-            if not session_is_pilot:
-                timestamped_pnl.extend(session_pnl)
-                trades += len(session_pnl)
+            if session_is_pilot:
+                continue
+            if not formal_authorized:
+                # A non-pilot session without a verified authorization record is
+                # quarantined: it can never count as strategy performance.
+                unauthorized_sessions += 1
+                continue
+            timestamped_pnl.extend(session_pnl)
+            trades += len(session_pnl)
 
     timestamped_pnl.sort(key=lambda item: item[0])
     pnl_series = [value for _, value in timestamped_pnl]
@@ -128,9 +145,12 @@ def build_shadow_experiment_report(
         "zero_system_error_sessions": errors == 0,
         "zero_hard_rule_violations": violations == 0,
         "zero_pilot_decisions": pilot_decisions == 0,
+        "zero_unauthorized_sessions": unauthorized_sessions == 0,
+        "formal_shadow_authorization_on_record": formal_authorized,
     }
     return ShadowExperimentReport(
         dated_dirs[0][0], dated_dirs[-1][0], len(dated_dirs), eligible_days,
-        trades, pilot_decisions, errors, violations, net_pnl, gross_profit,
+        trades, pilot_decisions, unauthorized_sessions, formal_authorized,
+        errors, violations, net_pnl, gross_profit,
         gross_loss, profit_factor, maximum_drawdown, drawdown_pct, gates,
     )

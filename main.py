@@ -14,8 +14,9 @@ from execution.official_mcp_collector import (
     collect_official_shadow_snapshot,
 )
 from execution.raw_data_vault import RawDataVault
-from monitoring.kill_switch import KillSwitch
-from monitoring.shadow_readiness import build_shadow_readiness
+from monitoring.daily_schedule import SESSION_TIMEZONE, expected_runs_for_date
+from monitoring.kill_switch import AutomationHalt, KillSwitch
+from monitoring.shadow_readiness import build_shadow_readiness, load_market_check_evidence
 from monitoring.scheduler_health import evaluate_start_ack, write_start_ack
 from monitoring.scheduler_watchdog import (
     check_expected_run,
@@ -25,6 +26,7 @@ from monitoring.scheduler_watchdog import (
 from monitoring.shadow_activation import (
     evaluate_shadow_authorization,
     load_p0_qualification,
+    load_shadow_authorization,
     persist_shadow_authorization,
 )
 from journal.shadow_review import InvalidShadowLogError, review_shadow_day
@@ -34,6 +36,8 @@ from risk.startup_guard import load_safety_config, validate_safety_config
 
 
 SAFETY_CONFIG_PATH = Path("config/safety.toml")
+STRATEGY_VERSION = "strategy_v1.0"
+AUTHORIZATION_PATH = Path("state/shadow_authorization.json")
 
 
 def build_status() -> dict[str, object]:
@@ -51,6 +55,7 @@ def build_status() -> dict[str, object]:
         "order_tools_enabled": config["order_tools_enabled"],
         "kill_switch_engaged": kill_switch.engaged,
         "kill_switch_reason": kill_switch.reason,
+        "automation_halted": AutomationHalt().active(),
         "phase3_blockers": phase3_blockers,
         "max_deployable_capital_usd": config["max_deployable_capital_usd"],
         "approved_trade_stage": config["approved_trade_stage"],
@@ -64,12 +69,26 @@ def status_command() -> int:
 
 def kill_command() -> int:
     result = KillSwitch().engage()
-    print(json.dumps({"engaged": result.engaged, "reason": result.reason}, indent=2))
+    halt_path = AutomationHalt().engage()
+    print(json.dumps({
+        "engaged": result.engaged,
+        "reason": result.reason,
+        "automation_halted": True,
+        "automation_halt_marker": str(halt_path),
+        "resume_note": "Automation stays halted until the owner removes the marker file after review.",
+    }, indent=2))
     return 0 if result.engaged else 1
 
 
-def shadow_readiness_command() -> int:
-    report = build_shadow_readiness()
+def shadow_readiness_command(market_checks_path: str | None = None) -> int:
+    market_checks = None
+    if market_checks_path is not None:
+        try:
+            market_checks = load_market_check_evidence(market_checks_path)
+        except ValueError as error:
+            print(json.dumps({"status": "INVALID", "error": str(error)}, indent=2))
+            return 1
+    report = build_shadow_readiness(market_checks=market_checks)
     print(json.dumps(report.to_dict(), indent=2, sort_keys=True))
     return 0 if report.offline_ready else 1
 
@@ -125,12 +144,23 @@ def shadow_validate_command(path: str) -> int:
     return 0
 
 
+def _formal_shadow_authorized() -> bool:
+    return load_shadow_authorization(STRATEGY_VERSION, AUTHORIZATION_PATH)
+
+
 def shadow_evaluate_command(path: str, *, pilot: bool) -> int:
-    if not pilot:
-        print(json.dumps({"status": "REFUSED", "error": "--pilot is required"}, indent=2))
+    if not pilot and not _formal_shadow_authorized():
+        print(json.dumps({
+            "status": "REFUSED",
+            "error": "Formal mode requires a valid state/shadow_authorization.json; otherwise pass --pilot.",
+        }, indent=2))
         return 2
     try:
-        result = run_one_shot_pilot(path)
+        result = run_one_shot_pilot(
+            path,
+            pilot_mode=pilot,
+            shadow_authorized=not pilot,
+        )
     except (InvalidShadowInputError, ValueError) as error:
         print(json.dumps({"status": "INVALID", "error": str(error)}, indent=2))
         return 1
@@ -150,11 +180,18 @@ def shadow_review_command(day: str) -> int:
 
 
 def shadow_replay_command(path: str, *, pilot: bool) -> int:
-    if not pilot:
-        print(json.dumps({"status": "REFUSED", "error": "--pilot is required"}, indent=2))
+    if not pilot and not _formal_shadow_authorized():
+        print(json.dumps({
+            "status": "REFUSED",
+            "error": "Formal mode requires a valid state/shadow_authorization.json; otherwise pass --pilot.",
+        }, indent=2))
         return 2
     try:
-        result = run_shadow_replay(path)
+        result = run_shadow_replay(
+            path,
+            pilot_mode=pilot,
+            shadow_authorized=not pilot,
+        )
     except (InvalidShadowInputError, ValueError, RuntimeError) as error:
         print(json.dumps({"status": "INVALID", "error": str(error)}, indent=2))
         return 1
@@ -311,6 +348,27 @@ def scheduler_expect_command(run_id: str, scheduled_for: str) -> int:
     return 0
 
 
+def scheduler_expect_day_command(day: str) -> int:
+    """Register the full daily slot table so the watchdog is never fail-open."""
+
+    try:
+        parsed = date.fromisoformat(day)
+        registered = []
+        for run_id, scheduled_for in expected_runs_for_date(parsed, SESSION_TIMEZONE):
+            path = register_expected_run(run_id=run_id, scheduled_for=scheduled_for)
+            registered.append({"run_id": run_id, "scheduled_for": scheduled_for.isoformat(), "path": str(path)})
+    except ValueError as error:
+        print(json.dumps({"status": "INVALID", "error": str(error)}, indent=2))
+        return 1
+    print(json.dumps({
+        "status": "EXPECTED_DAY_REGISTERED",
+        "day": parsed.isoformat(),
+        "count": len(registered),
+        "registered": registered,
+    }, indent=2, sort_keys=True))
+    return 0
+
+
 def scheduler_watchdog_scan_command(grace_seconds: int) -> int:
     results = scan_expected_runs(
         checked_at=datetime.now().astimezone(),
@@ -335,9 +393,13 @@ def parse_args() -> argparse.Namespace:
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("status", help="Show local safety status.")
     subparsers.add_parser("kill", help="Engage the local emergency stop.")
-    subparsers.add_parser(
+    readiness_parser = subparsers.add_parser(
         "shadow-readiness",
         help="Report offline readiness and Monday market-time blockers without activating Shadow.",
+    )
+    readiness_parser.add_argument(
+        "--market-checks",
+        help="Path to evidence-bearing market-check results (see config/market_checks.example.json).",
     )
     authorize_parser = subparsers.add_parser(
         "shadow-authorize",
@@ -409,6 +471,11 @@ def parse_args() -> argparse.Namespace:
     )
     expect_parser.add_argument("run_id")
     expect_parser.add_argument("scheduled_for", help="Timezone-aware ISO-8601 scheduled time.")
+    expect_day_parser = subparsers.add_parser(
+        "scheduler-expect-day",
+        help="Pre-register the complete daily slot table for one observation date.",
+    )
+    expect_day_parser.add_argument("day", help="Observation date in YYYY-MM-DD (America/Los_Angeles).")
     scan_parser = subparsers.add_parser(
         "scheduler-watchdog-scan", help="Audit all pre-registered scheduled runs."
     )
@@ -423,7 +490,7 @@ def main() -> int:
     if args.command == "kill":
         return kill_command()
     if args.command == "shadow-readiness":
-        return shadow_readiness_command()
+        return shadow_readiness_command(args.market_checks)
     if args.command == "shadow-authorize":
         return shadow_authorize_command(args.qualification, owner_approved=args.owner_approved)
     if args.command == "shadow-validate":
@@ -452,6 +519,8 @@ def main() -> int:
         return scheduler_watchdog_command(args.run_id, args.scheduled_for, args.grace_seconds)
     if args.command == "scheduler-expect":
         return scheduler_expect_command(args.run_id, args.scheduled_for)
+    if args.command == "scheduler-expect-day":
+        return scheduler_expect_day_command(args.day)
     if args.command == "scheduler-watchdog-scan":
         return scheduler_watchdog_scan_command(args.grace_seconds)
     raise AssertionError(f"Unhandled command: {args.command}")

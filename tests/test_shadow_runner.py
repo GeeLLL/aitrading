@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from datetime import date, datetime, timedelta, timezone
@@ -125,6 +126,26 @@ class ShadowRunnerTests(unittest.TestCase):
         self.assertEqual("OPTION_PROFIT_TARGET", decision.reason)
         self.assertEqual(ShadowSessionState.COMPLETE, self.runner.recorder.state)
         self.assertIsNone(self.runner.entry_fill_price)
+
+    def test_exit_pnl_is_net_of_deterministic_friction(self) -> None:
+        self.open_position()
+        self.runner.observe_position(
+            self.observation(current_bid=Decimal("0.61"), current_mark=Decimal("0.62"))
+        )
+        exited = None
+        for line in Path(self.runner.recorder.path).read_text(encoding="utf-8").splitlines():
+            event = json.loads(line)
+            if event.get("event_type") == "EXITED":
+                exited = event["payload"]
+        self.assertIsNotNone(exited)
+        gross = Decimal(str(exited["simulated_gross_pnl_usd"]))
+        friction = Decimal(str(exited["friction_usd"]))
+        net = Decimal(str(exited["simulated_pnl_usd"]))
+        # Entry 0.47, exit bid 0.61 => gross 14.00. Configured friction:
+        # 0.15 * 2 + 0.10 fees + 1 tick * 0.01 * 100 slippage = 1.40.
+        self.assertEqual(Decimal("14.00"), gross)
+        self.assertEqual(Decimal("1.40"), friction)
+        self.assertEqual(gross - friction, net)
 
     def test_forced_exit_requires_an_existing_position(self) -> None:
         with self.assertRaises(RuntimeError):

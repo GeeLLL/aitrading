@@ -13,7 +13,11 @@ It is not needed to operate the current READ_ONLY build.
 
 ## Ordered response
 
-1. Engage the local kill switch (`python3 main.py kill`).
+1. Engage the local kill switch (`python3 main.py kill`). This also writes
+   `state/automation_halt.json`, which makes every subsequent scheduled
+   Shadow/Pilot worker run refuse to start. Resuming automation requires the
+   owner to remove that marker file manually after review; there is no command
+   to clear it.
 2. Confirm the configuration disables new entries.
 3. In the official Robinhood interface, inspect all open option orders.
 4. Cancel open orders manually or confirm the count is zero.
