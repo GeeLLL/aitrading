@@ -166,6 +166,21 @@ Evaluate the accumulated Shadow experiment against activation gates:
 python3 main.py shadow-experiment-report
 ```
 
+Compute the a-priori cost wall and required edge for a single-leg long option
+trade (an instrument-feasibility screen, not a profitability claim). It reports
+the round-trip cost (spread + fees + latency slippage + theta), how far the
+option must rise just to break even, the win rate a given payoff needs to clear
+the wall versus the cost-free breakeven, and — with `--win-rate` — a Monte-Carlo
+expectancy band showing that a positive point estimate at a small trade count
+is not yet evidence:
+
+```bash
+python3 main.py cost-wall --premium 0.50 --spread-pct 0.08 --delta 0.40 --underlying 742 \
+  --gross-win 20 --gross-loss 10 --win-rate 0.55
+```
+
+Friction inputs default to the `[friction_model]` section of `config/safety.toml`.
+
 Audit the complete inventory of human-selected thresholds. The included file
 is intentionally marked unvalidated and therefore returns `REVIEW_REQUIRED`:
 

@@ -209,6 +209,73 @@ def shadow_experiment_command() -> int:
     return 0
 
 
+def cost_wall_command(args: argparse.Namespace) -> int:
+    from decimal import Decimal
+
+    from research.cost_wall import (
+        FrictionModel,
+        TradeCostInputs,
+        compute_cost_wall,
+        expectancy_ci,
+        required_expectancy_for_monthly_target,
+        required_win_rate,
+    )
+
+    def dec(value: object) -> Decimal:
+        return Decimal(str(value))
+
+    try:
+        friction = FrictionModel.from_safety_config(SAFETY_CONFIG_PATH)
+        inputs = TradeCostInputs(
+            mid_premium_usd=dec(args.premium),
+            relative_spread=dec(args.spread_pct),
+            delta=dec(args.delta),
+            underlying_price_usd=dec(args.underlying),
+            friction=friction,
+            contracts=args.contracts,
+            holding_fraction_of_day=dec(args.holding_fraction),
+            theta_per_share_per_day_usd=dec(args.theta_per_day),
+        )
+        wall = compute_cost_wall(inputs)
+        result: dict[str, object] = {"cost_wall": wall.to_dict()}
+
+        if args.gross_win is not None and args.gross_loss is not None:
+            monthly_target = required_expectancy_for_monthly_target(
+                account_usd=dec(args.account),
+                monthly_target_pct=dec(args.monthly_target_pct),
+                trades_per_month=args.trades_per_month,
+            )
+            edge = required_win_rate(
+                gross_win_usd=dec(args.gross_win),
+                gross_loss_usd=dec(args.gross_loss),
+                total_cost_usd=dec(wall.total_cost_usd),
+                target_per_trade_usd=monthly_target,
+            )
+            result["required_expectancy_per_trade_for_monthly_target_usd"] = str(monthly_target)
+            result["required_edge"] = edge.to_dict()
+            if args.win_rate is not None:
+                mean, low, high = expectancy_ci(
+                    win_rate=dec(args.win_rate),
+                    gross_win_usd=dec(args.gross_win),
+                    gross_loss_usd=dec(args.gross_loss),
+                    total_cost_usd=dec(wall.total_cost_usd),
+                    trades=args.ci_trades,
+                )
+                result["expectancy_at_assumed_win_rate"] = {
+                    "win_rate": str(dec(args.win_rate)),
+                    "trades_simulated": args.ci_trades,
+                    "mean_expectancy_usd": str(mean),
+                    "ci_low_usd": str(low),
+                    "ci_high_usd": str(high),
+                    "note": "CI straddling 0 means a positive point estimate is not yet evidence.",
+                }
+    except (OSError, ValueError, KeyError) as error:
+        print(json.dumps({"status": "INVALID", "error": str(error)}, indent=2))
+        return 1
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
+
+
 def parameter_audit_command(path: str) -> int:
     try:
         raw = json.loads(Path(path).read_text(encoding="utf-8"))
@@ -452,6 +519,24 @@ def parse_args() -> argparse.Namespace:
     subparsers.add_parser(
         "shadow-experiment-report", help="Evaluate accumulated Shadow evidence gates."
     )
+    cost_wall_parser = subparsers.add_parser(
+        "cost-wall",
+        help="Compute the a-priori cost wall and required edge for a long option trade.",
+    )
+    cost_wall_parser.add_argument("--premium", required=True, help="Option mid price per share, e.g. 0.50.")
+    cost_wall_parser.add_argument("--spread-pct", required=True, help="Bid/ask spread as fraction of mid, e.g. 0.07.")
+    cost_wall_parser.add_argument("--delta", required=True, help="Option delta magnitude, e.g. 0.40.")
+    cost_wall_parser.add_argument("--underlying", required=True, help="Underlying price, e.g. 742.00.")
+    cost_wall_parser.add_argument("--contracts", type=int, default=1)
+    cost_wall_parser.add_argument("--holding-fraction", default="0.08", help="Hold time as fraction of a 6.5h session.")
+    cost_wall_parser.add_argument("--theta-per-day", default="0.02", help="Theta magnitude per share per day.")
+    cost_wall_parser.add_argument("--gross-win", help="Option $ gain on a winning trade (before costs).")
+    cost_wall_parser.add_argument("--gross-loss", help="Option $ loss magnitude on a losing trade (before costs).")
+    cost_wall_parser.add_argument("--account", default="300", help="Account size for the monthly target.")
+    cost_wall_parser.add_argument("--monthly-target-pct", default="4", help="Monthly net return target, percent.")
+    cost_wall_parser.add_argument("--trades-per-month", type=int, default=20)
+    cost_wall_parser.add_argument("--win-rate", help="Assumed win rate to Monte-Carlo an expectancy CI.")
+    cost_wall_parser.add_argument("--ci-trades", type=int, default=40, help="Trades per Monte-Carlo sequence.")
     parameter_parser = subparsers.add_parser(
         "parameter-audit", help="Audit the mandatory human-selected parameter evidence inventory."
     )
@@ -533,6 +618,8 @@ def main() -> int:
         return shadow_replay_command(args.path, pilot=args.pilot)
     if args.command == "shadow-experiment-report":
         return shadow_experiment_command()
+    if args.command == "cost-wall":
+        return cost_wall_command(args)
     if args.command == "parameter-audit":
         return parameter_audit_command(args.path)
     if args.command == "shadow-collect":
