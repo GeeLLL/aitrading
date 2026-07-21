@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "live-dashboard",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["scripts/serve_live_dashboard.py"],
+      "port": 8787
+    }
+  ]
+}

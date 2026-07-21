@@ -1,0 +1,18 @@
+{
+  "ack_path": "logs/scheduler/launchd-canary-20260721-0610.start.json",
+  "duration_seconds": 180.305728,
+  "ended_at": "2026-07-21T13:13:05.428919+00:00",
+  "evidence_class": "PILOT_EXCLUDED_FROM_PERFORMANCE",
+  "failure_reason": "OfficialCollectorError: Tool result for get_earnings_calendar is not valid JSON (possible truncation).",
+  "kind": "CANARY",
+  "live_trading_enabled": false,
+  "order_tools_enabled": false,
+  "read_only": true,
+  "run_id": "launchd-canary-20260721-0610",
+  "schema_version": 1,
+  "snapshot_path": null,
+  "snapshot_sha256": null,
+  "started_at": "2026-07-21T13:10:05.123191+00:00",
+  "status": "FAILED_CLOSED",
+  "symbol": "SPY"
+}

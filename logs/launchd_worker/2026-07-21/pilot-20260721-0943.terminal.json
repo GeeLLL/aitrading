@@ -1,0 +1,359 @@
+{
+  "schema_version": 1,
+  "status": "COMPLETED_NO_TRADE",
+  "run_id": "pilot-20260721-0943",
+  "kind": "PILOT_SAMPLE",
+  "symbol": "TSLA",
+  "kind_source": "monitoring/daily_schedule.py DAILY_SLOTS (9, 43) -> (\"PILOT_SAMPLE\", \"TSLA\"). The scheduler start ACK carries only run_id/scheduled_for/status and no kind field, so the schedule table was consulted rather than inferring the kind from the run-id prefix. The resolved symbol TSLA independently matches the prompt's stated fallback research symbol, corroborating the slot resolution. Same resolution method as pilot-20260721-0723 through -0923.",
+  "scheduled_for": "2026-07-21T16:43:00+00:00",
+  "ack_path": "logs/scheduler/pilot-20260721-0943.start.json",
+  "ack_rewritten": false,
+  "started_at": "2026-07-21T16:43:05+00:00",
+  "ended_at": "2026-07-21T16:45:40+00:00",
+  "agent_runtime": "CLAUDE_CODE_CLI",
+  "read_only": true,
+  "live_trading_enabled": false,
+  "order_tools_enabled": false,
+  "kill_switch_engaged": true,
+  "kill_switch_reason": "TRADING_ARM_MARKER_ABSENT",
+  "evidence_class": "PILOT_EXCLUDED_FROM_PERFORMANCE",
+  "preflight": {
+    "system_mode": "READ_ONLY",
+    "status_gate": "PASS",
+    "approved_trade_stage": 1,
+    "automation_halted": false,
+    "phase3_blockers": [],
+    "gate_note": "python3 main.py status was executed first and returned system_mode READ_ONLY, live_trading_enabled false, order_tools_enabled false, kill_switch_engaged true. All four required conditions held, so the run proceeded.",
+    "unfinished_trajectories_refreshed": 0,
+    "unfinished_trajectories_note": "Step 1 executed first: logs/quote_trajectories/2026-07-21/ exists but is empty. Runs pilot-20260721-0703 through -0923 each wrote zero events (no contract ever reached selection), so no trajectory was open or unfinished. Step 1 is vacuously satisfied and no refresh MCP calls were made."
+  },
+  "upstream_gate": {
+    "market_gate_run_id": "market-gate-20260721-0635",
+    "market_gate_status": "FAILED_CLOSED",
+    "market_gate_detail": "4 PASS / 1 FAIL / 1 UNKNOWN. gate_result NOT_SATISFIED with blocking_checks [official_raw_mcp_snapshot, raw_to_feature_reproducibility].",
+    "verification_method": "INDEPENDENTLY_RE_VERIFIED_THIS_RUN. Unlike pilot-20260721-0903 and -0923, which restated the finding from a prior run's structured record, this run re-parsed the MARKET_GATE transcript logs/launchd_worker/2026-07-21/market-gate-20260721-0635.stdout.jsonl directly and recovered the emitted summary object verbatim: {\"pass\": 4, \"fail\": 1, \"unknown\": 1, \"gate_result\": \"NOT_SATISFIED\", \"blocking_checks\": [\"official_raw_mcp_snapshot\", \"raw_to_feature_reproducibility\"]}. The parse was done by script so the 249KB transcript never entered agent context. The carried-forward claim is confirmed correct at source, and the named blocking checks match the previously reported FAIL (immutable raw MCP snapshot) and UNKNOWN (deterministic replay equality).",
+    "formal_shadow_authorized": false,
+    "effect_on_this_run": "Formal Shadow remains unauthorized. This PILOT_SAMPLE run is research-only and excluded from performance, so it proceeded; no Shadow evidence was produced. This run does not authorize formal Shadow."
+  },
+  "market_data": {
+    "universe_source": "config/universe.toml",
+    "symbols": [
+      "SPY",
+      "QQQ",
+      "IWM",
+      "AAPL",
+      "MSFT",
+      "NVDA",
+      "AMZN",
+      "META",
+      "TSLA",
+      "AMD"
+    ],
+    "symbol_count": 10,
+    "universe_note": "TSLA, this slot's scheduled research symbol, IS a member of the frozen ten-symbol universe, so unlike the GOOGL slot at 09:23 no symbol had to be excluded. The universe was still evaluated as frozen and no symbol was added (allow_llm_to_add_symbols = false).",
+    "quotes": {
+      "tool": "get_equity_quotes",
+      "local_receipt_time": "2026-07-21T16:43:55.313576+00:00",
+      "all_states_active": true,
+      "all_has_traded": true,
+      "max_quote_age_seconds": 11.49,
+      "freshness_gate": "PARTIAL_FAIL",
+      "freshness_note": "META breached the 10-second current-quote limit: venue_last_trade_time 16:43:43.823Z against a 16:43:55.314Z local receipt = 11.49s. All nine other symbols were inside the limit (next-oldest IWM 4.10s; TSLA 2.99s, AMD 3.73s, QQQ 2.31s). This is recorded as a real breach rather than rounded away.",
+      "freshness_breach_symbols": [
+        "META"
+      ],
+      "freshness_breach_binding": false,
+      "freshness_breach_note": "META's staleness is NON-BINDING on this run's outcome. META independently failed the signal gates on completed-bar data (ema_aligned_up false, confirm_up false), so it could not have become a candidate under any frozen label regardless of quote age. The breach therefore did not suppress a would-be candidate. Recorded because it is the first current-quote freshness breach of the session and because the distinction matters: META's bid/ask timestamp was fresh (16:43:52.555Z, 2.76s), so the symbol had simply not printed a trade recently rather than the feed being stale. No decision relied on META's quote."
+    },
+    "bars": {
+      "tool": "get_equity_historicals",
+      "interval": "5minute",
+      "bounds": "regular",
+      "start_time": "2026-07-20T17:00:00Z",
+      "completed_bars_per_symbol": 74,
+      "bar_counts_uniform": true,
+      "newest_completed_bar_begins_at": "2026-07-21T16:35:00Z",
+      "newest_completed_bar_ends_at": "2026-07-21T16:40:00Z",
+      "newest_bar_aligned_across_all_symbols": true,
+      "interpolated_bars": 0,
+      "newest_bar_age_seconds": 252.15,
+      "newest_bar_freshness_gate": "PASS",
+      "freshness_rule_note": "The 420-second limit was applied only to the newest completed bar (ends 16:40:00Z, 252.15s before the 16:44:12.152Z payload receipt). The 73 older lookback bars were deliberately not subjected to any 10-second or 420-second freshness rule, per the run instructions."
+    }
+  },
+  "evaluation": {
+    "parameter_source": "strategy/strategy_v1.0.toml",
+    "computation_script": "logs/launchd_worker/2026-07-21/_compute_0723.py (reused unmodified, sha256 d8267b52fd661ec0566d4d46ace6e076611172a366c8b0c3d991848ea0d25a39, re-verified byte-for-byte at 2026-07-21T16:44Z) via runner logs/launchd_worker/2026-07-21/_run_0943.py",
+    "computation_output": "logs/launchd_worker/2026-07-21/_indicators_0943.json",
+    "computation_note": "Indicators were computed by the same deterministic local script authored for pilot-20260721-0723, reused byte-for-byte without modification so all nine of today's PILOT_SAMPLE runs share identical logic. The runner redirects stdout to this run's artifact path and additionally derives payload-integrity facts (bar counts, newest-bar alignment, interpolated-bar count) from the raw payload; it performs no network access and does not alter any indicator value. Runner exited 0 on first invocation. No indicator value was estimated or hand-derived.",
+    "raw_payload_source": "get_equity_historicals response exceeded the inline token limit and was persisted by the harness to a tool-results file; the compute script consumed that immutable saved payload directly by path. No value was re-typed or summarized by hand.",
+    "volume_average_lookback_bars": 20,
+    "breakout_lookback_completed_bars": 6,
+    "fast_ema_period": 9,
+    "slow_ema_period": 20,
+    "ema_seeding": "20-bar simple average seed, then standard 2/(n+1) smoothing",
+    "market_regime": {
+      "reference_symbols": [
+        "SPY",
+        "QQQ"
+      ],
+      "confirmation_completed_bars": 2,
+      "result": "DIRECTIONAL_UP",
+      "gate": "PASS",
+      "detail": "SPY: EMA-9 748.3712 > EMA-20 747.8093, newest close 748.69 above session VWAP 746.4625, two-bar upward confirmation true. QQQ: EMA-9 708.756 > EMA-20 708.0089, newest close 709.28 above session VWAP 706.4315, two-bar upward confirmation true. Both reference symbols agree, so the regime gate cleared for a seventh consecutive slot."
+    },
+    "binding_gate_note": "This slot reverts to the pattern that held before 09:23. The single structurally clean breakout was AMD, which satisfied all four structural gates (breakout_up, ema_aligned_up, close_above_vwap, two-bar confirm_up) but carried volume ratio 0.8629 - below even the strategy config's own minimum_volume_ratio floor of 1.50, and far below the frozen label thresholds of 2.5 and 3.0. The binding gate this slot was therefore volume confirmation at the config floor, not merely at the stricter frozen thresholds. Notably the session-wide picture cooled: the highest volume ratio anywhere in the universe was META at 1.1325, versus SPY at 2.0776 one slot earlier, and SPY itself fell to 0.4938 - the lowest in the universe. No symbol reached even the config floor.",
+    "label_definition_source": "research/ACCELERATED_PROFITABILITY_AND_AI_EDGE_V1_CN.md lines 55-57 define BASE_25 as volume ratio at least 2.5, BASE_30 as volume ratio at least 3.0, and AI_RANK_V1 as rank/select/abstain only with hard risk control and contract validation remaining in deterministic code. Thresholds were re-read from that authoritative document this run rather than carried over from prior runs' prose.",
+    "labels": {
+      "BASE_25": {
+        "minimum_volume_ratio": 2.5,
+        "result": "NO_TRADE",
+        "qualified_symbols": [],
+        "reason": "No symbol came close. The universe-wide maximum volume ratio was META at 1.1325, short of the required 2.5 by 1.3675, and META independently failed the structural gates. AMD, the only symbol confirming a full structural breakout, reached just 0.8629. Market regime PASSED, so volume confirmation was the binding gate."
+      },
+      "BASE_30": {
+        "minimum_volume_ratio": 3.0,
+        "result": "NO_TRADE",
+        "qualified_symbols": [],
+        "reason": "The universe-wide maximum of 1.1325 (META) falls 1.8675 short of the required 3.0. AMD's structurally valid breakout at 0.8629 falls 2.1371 short. Market regime PASSED, so volume confirmation was the binding gate."
+      },
+      "AI_RANK_V1": {
+        "result": "ABSTAIN",
+        "qualified_symbols": [],
+        "reason": "Zero deterministically qualified candidates under both frozen thresholds. AI may rank or abstain only; with an empty qualified set the only permitted action is ABSTAIN. AI did not override, relax, or reorder any deterministic gate. Specifically, AI did NOT promote AMD despite it being the session's cleanest structural setup this slot (all four structural gates true, close 539.46 clearing its prior-6-bar high of 538.75, EMA-9 536.5176 above EMA-20 534.1783, and price well above session VWAP 530.5522); AMD's volume ratio of 0.8629 fails not only the frozen thresholds but the config floor of 1.50, and admitting it would have required relaxing a frozen threshold, which is outside AI's permitted actions."
+      },
+      "NEAR_MISS": {
+        "result": "RECORDED_UNDERLYING_LEVEL_ONLY",
+        "candidate_limit": 2,
+        "selection_rule": "Top 2 by volume ratio, the same ranking rule applied at 07:23 through 09:23. Retained unchanged this slot so near-miss records stay comparable across the session; not re-chosen to favour the better-looking setup. Note this rule selects META and QQQ rather than AMD, even though AMD was the only full structural breakout - the rule was deliberately NOT switched to a structure-first ranking mid-session, and AMD is documented separately below instead.",
+        "candidates": [
+          {
+            "symbol": "META",
+            "volume_ratio": 1.1325,
+            "breakout_up": true,
+            "ema_aligned_up": false,
+            "close_above_vwap": true,
+            "two_bar_confirmation_up": false,
+            "newest_close": 647.905,
+            "prior_6_bar_high": 647.9,
+            "prior_6_bar_low": 645.97,
+            "session_vwap": 647.4886,
+            "newest_volume": 30019,
+            "volume_average_20": 26507.9,
+            "rejection_reasons": [
+              "VOLUME_CONFIRMATION_FAILED_VS_CONFIG_FLOOR_AND_FROZEN_LABEL_THRESHOLD",
+              "EMA_NOT_ALIGNED_UP",
+              "TWO_BAR_CONFIRMATION_FAILED",
+              "CURRENT_QUOTE_STALE_11_49S_EXCEEDS_10S_LIMIT"
+            ],
+            "note": "Highest volume ratio in the universe but a weak setup: the close of 647.905 cleared the prior-6-bar high of 647.9 by only 0.005, EMA-9 647.5457 sits just below EMA-20 647.572 (aligned DOWN), and two-bar confirmation failed. Also the one symbol whose current quote breached the 10s freshness limit. It fails on four independent grounds, so no single relaxation would have admitted it."
+          },
+          {
+            "symbol": "QQQ",
+            "volume_ratio": 1.0536,
+            "breakout_up": false,
+            "ema_aligned_up": true,
+            "close_above_vwap": true,
+            "two_bar_confirmation_up": true,
+            "newest_close": 709.28,
+            "prior_6_bar_high": 709.41,
+            "prior_6_bar_low": 708.45,
+            "session_vwap": 706.4315,
+            "newest_volume": 125113,
+            "volume_average_20": 118744.6,
+            "rejection_reasons": [
+              "BREAKOUT_NOT_CONFIRMED",
+              "VOLUME_CONFIRMATION_FAILED_VS_CONFIG_FLOOR_AND_FROZEN_LABEL_THRESHOLD"
+            ],
+            "note": "Trend structure is intact (EMA aligned up, above VWAP, two-bar confirmation) but the newest close of 709.28 sits below the prior-6-bar high of 709.41, so no breakout, and volume is essentially at average."
+          }
+        ],
+        "structural_breakout_not_in_near_miss_set": {
+          "symbol": "AMD",
+          "volume_ratio": 0.8629,
+          "breakout_up": true,
+          "ema_aligned_up": true,
+          "close_above_vwap": true,
+          "two_bar_confirmation_up": true,
+          "newest_close": 539.46,
+          "prior_6_bar_high": 538.75,
+          "prior_6_bar_low": 533.2408,
+          "session_vwap": 530.5522,
+          "newest_volume": 106059,
+          "volume_average_20": 122916.75,
+          "rejection_reasons": [
+            "VOLUME_CONFIRMATION_FAILED_VS_CONFIG_FLOOR_AND_FROZEN_LABEL_THRESHOLD"
+          ],
+          "note": "Recorded explicitly because the frozen top-2-by-volume near-miss rule excludes it while it was the only symbol in the universe to satisfy every structural gate. Its rejection is unambiguous and single-caused: volume ratio 0.8629 is BELOW average volume, failing the config floor of 1.50 outright. A breakout on below-average volume is exactly the unconfirmed move the volume gate exists to reject, so this is the gate working as designed rather than a threshold artifact. Documented here so the session record does not lose the observation purely because of the near-miss ranking rule."
+        }
+      }
+    },
+    "full_universe_ranking": [
+      {
+        "symbol": "META",
+        "volume_ratio": 1.1325,
+        "breakout_up": true,
+        "ema_aligned_up": false,
+        "close_above_vwap": true,
+        "confirm_up": false
+      },
+      {
+        "symbol": "QQQ",
+        "volume_ratio": 1.0536,
+        "breakout_up": false,
+        "ema_aligned_up": true,
+        "close_above_vwap": true,
+        "confirm_up": true
+      },
+      {
+        "symbol": "MSFT",
+        "volume_ratio": 0.8925,
+        "breakout_up": true,
+        "ema_aligned_up": false,
+        "close_above_vwap": false,
+        "confirm_up": false
+      },
+      {
+        "symbol": "AMD",
+        "volume_ratio": 0.8629,
+        "breakout_up": true,
+        "ema_aligned_up": true,
+        "close_above_vwap": true,
+        "confirm_up": true
+      },
+      {
+        "symbol": "AAPL",
+        "volume_ratio": 0.8367,
+        "breakout_up": false,
+        "ema_aligned_up": true,
+        "close_above_vwap": true,
+        "confirm_up": true
+      },
+      {
+        "symbol": "AMZN",
+        "volume_ratio": 0.7676,
+        "breakout_up": false,
+        "ema_aligned_up": false,
+        "close_above_vwap": false,
+        "confirm_up": false
+      },
+      {
+        "symbol": "NVDA",
+        "volume_ratio": 0.7503,
+        "breakout_up": false,
+        "ema_aligned_up": false,
+        "close_above_vwap": false,
+        "confirm_up": false
+      },
+      {
+        "symbol": "IWM",
+        "volume_ratio": 0.6781,
+        "breakout_up": false,
+        "ema_aligned_up": true,
+        "close_above_vwap": true,
+        "confirm_up": true
+      },
+      {
+        "symbol": "TSLA",
+        "volume_ratio": 0.6617,
+        "breakout_up": false,
+        "ema_aligned_up": true,
+        "close_above_vwap": true,
+        "confirm_up": true
+      },
+      {
+        "symbol": "SPY",
+        "volume_ratio": 0.4938,
+        "breakout_up": false,
+        "ema_aligned_up": true,
+        "close_above_vwap": true,
+        "confirm_up": true
+      }
+    ],
+    "scheduled_symbol_detail": {
+      "symbol": "TSLA",
+      "in_frozen_universe": true,
+      "volume_ratio": 0.6617,
+      "breakout_up": false,
+      "ema_aligned_up": true,
+      "close_above_vwap": true,
+      "two_bar_confirmation_up": true,
+      "newest_close": 381.13,
+      "prior_6_bar_high": 382.045,
+      "session_vwap": 379.6089,
+      "outcome": "NO_TRADE",
+      "note": "This slot's scheduled research symbol was evaluated on equal terms with the rest of the frozen universe and received no preferential treatment. Trend structure is intact but the newest close of 381.13 is below the prior-6-bar high of 382.045 (no breakout) and volume ratio 0.6617 is well below average."
+    }
+  },
+  "policy_trade": {
+    "virtual_candidates_used_today": 0,
+    "daily_limit": 1,
+    "consumed_by_this_run": 0,
+    "selected_contract": null,
+    "outcome": "NO_TRADE",
+    "note": "Runs pilot-20260721-0703 through -0923 and this run all produced NO_TRADE and consumed zero candidates, so the one-per-day policy-trade budget remains unused and available to the remaining PILOT_SAMPLE slots today (10:03, 10:23, 10:43, 11:03, 11:23). No counterfactual research trajectory was opened either, since no candidate reached contract selection."
+  },
+  "option_quote_refresh": {
+    "performed": false,
+    "contracts_refreshed": 0,
+    "reason": "Step 5 applies to every selected contract. No contract was selected under any frozen label, so there was nothing to refresh. No option chain, instrument or quote MCP call was made. Bid, ask, mark, source updated_at, local receipt time, IV, Greeks, volume and OI are consequently absent rather than null-filled, because no instrument was ever identified."
+  },
+  "simulated_fills": {
+    "entries": 0,
+    "exits": 0,
+    "no_fill_events": 0,
+    "reason": "Step 6 requires a recorded limit and a later observed ask/bid on a selected contract. With no selection there was no limit to compare against and no fill, no-fill, spread, latency or friction record could be produced without fabricating an instrument. Nothing was assumed at the mark."
+  },
+  "trajectories": {
+    "root": "logs/quote_trajectories/2026-07-21/",
+    "directory_created": true,
+    "directory_pre_existing": true,
+    "events_written": 0,
+    "incomplete_trajectories": 0,
+    "reason": "config/quote_trajectory.schema.json requires instrument_id, option_type, strike and expiration_date on every event. With no selected contract these fields have no observed values, and inventing them would fabricate data. Zero events were written rather than partial or synthetic ones."
+  },
+  "mcp_tool_usage": {
+    "tools_called": [
+      "get_equity_quotes",
+      "get_equity_historicals"
+    ],
+    "call_count": 2,
+    "mutating_tools_called": [],
+    "attestation": "Only enabled official read-only get_* tools were used. No review, place, replace, cancel, transfer, watchlist-mutation, or account-mutation tool was invoked. No account numbers, names, credentials, tokens, or personal data were read or stored; no account, portfolio, positions, orders, or tax-lot endpoint was touched by this run."
+  },
+  "timing": {
+    "mcp_cutoff_at": "2026-07-21T16:49:05+00:00",
+    "mcp_budget_seconds": 360,
+    "last_mcp_call_at": "2026-07-21T16:44:12+00:00",
+    "mcp_budget_respected": true,
+    "log_deadline_at": "2026-07-21T16:51:05+00:00",
+    "log_budget_seconds": 480,
+    "actual_duration_seconds": 155,
+    "log_budget_respected": true,
+    "log_budget_note": "Both MCP calls completed ~67s into the run, well inside the six-minute cutoff, and no further MCP call was made afterwards. Logs and dashboard finished inside the 480s budget, again helped by consuming the oversized historicals payload by file path rather than reading it into context."
+  },
+  "environment_notes": [
+    "The prior run's recommendation was followed: this run resolved its kind from monitoring/daily_schedule.py directly and did NOT read its own in-progress stdout transcript, avoiding the self-referential context waste noted by pilot-20260721-0923.",
+    "Per the persistent memory note on unattended-worker Bash restrictions, the frozen compute script's SHA-256 was computed with python3 hashlib rather than shasum, and the runner script was created with the Write tool rather than heredoc redirection. No check was weakened.",
+    "The MARKET_GATE transcript (249KB) was parsed by a python3 script that printed only the matched summary object, so transcript bulk never entered agent context. This upgraded the upstream-gate status from a carried-forward restatement to a fresh source verification at negligible cost."
+  ],
+  "caveats": [
+    "PILOT_EXCLUDED_FROM_PERFORMANCE. This run produced research observations only and must not enter any formal performance statistic.",
+    "This run does not authorize formal Shadow, and the upstream MARKET_GATE remains FAILED_CLOSED with the immutable raw MCP snapshot check still FAIL and deterministic replay equality still UNKNOWN. This run re-verified that status directly from the MARKET_GATE transcript rather than restating it.",
+    "META's current quote breached the 10-second freshness limit at 11.49s. The breach did not affect this run's outcome because META failed the completed-bar signal gates independently, but it is the session's first current-quote freshness breach and should be watched in later slots.",
+    "AMD was the only symbol satisfying every structural gate yet is absent from the NEAR_MISS set because the frozen top-2-by-volume ranking rule selected META and QQQ. The ranking rule was deliberately not changed mid-session; AMD is recorded separately under structural_breakout_not_in_near_miss_set so the observation is not lost.",
+    "Neither AMD's structural breakout nor META's volume high may be retroactively treated as a trade or as evidence that thresholds should be lowered; any threshold change requires explicit owner approval per config/sensitivity_plan_v1.json.",
+    "Universe-wide volume cooled sharply versus the 09:23 slot (session max volume ratio fell from 2.0776 to 1.1325, and no symbol reached the 1.50 config floor). This is an observation about this slot's tape, not a signal."
+  ],
+  "failure_reason": null,
+  "dashboard_rebuild_status": "COMPLETED",
+  "dashboard_rebuild_detail": {
+    "builder": "scripts/build_shadow_dashboard.py",
+    "output": "dashboard/index.html",
+    "rebuilt_at": "2026-07-21T16:45:13+00:00",
+    "bytes": 44343,
+    "exit_status": "OK",
+    "verification": "Output mtime confirmed as 2026-07-21T16:45:13.315Z against a verification clock reading of 16:45:13.334Z, roughly 19 milliseconds later, so the file was genuinely regenerated by this run rather than left stale.",
+    "byte_size_note": "44343 bytes, byte-identical in size to the 08:23 through 09:23 rebuilds. This is expected rather than a failed write: the dashboard renders Shadow/trajectory data, and nine consecutive NO_TRADE slots have added no new trajectory events for it to display. Freshness was therefore asserted from mtime, not from a size change."
+  }
+}

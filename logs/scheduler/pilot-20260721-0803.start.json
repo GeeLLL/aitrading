@@ -1,0 +1,7 @@
+{
+  "acknowledged_at": "2026-07-21T15:03:04.671171+00:00",
+  "run_id": "pilot-20260721-0803",
+  "scheduled_for": "2026-07-21T15:03:00+00:00",
+  "schema_version": 1,
+  "status": "STARTED"
+}

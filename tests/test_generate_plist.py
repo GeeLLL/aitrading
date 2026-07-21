@@ -10,12 +10,16 @@ from scripts.generate_shadow_worker_plist import render
 
 class GeneratePlistTests(unittest.TestCase):
     def test_paths_follow_the_actual_repo_and_interpreter(self) -> None:
+        # A path that exists on no machine: resolve() then only normalizes it,
+        # so the assertion is not sensitive to local symlinks (e.g. Homebrew's
+        # python3 -> Cellar/... on some Macs).
+        python = Path("/nonexistent-test-prefix/bin/python3")
         out = render(
             date(2026, 7, 21),
-            python=Path("/opt/homebrew/bin/python3"),
+            python=python,
             workdir=Path("/Users/ge/ge/aitrading"),
         )
-        self.assertIn("<string>/opt/homebrew/bin/python3</string>", out)
+        self.assertIn(f"<string>{python}</string>", out)
         self.assertIn("/Users/ge/ge/aitrading/scripts/launchd_shadow_worker.py", out)
         self.assertNotIn("Documents/AI trading agent", out)
         self.assertIn("<key>PATH</key>", out)

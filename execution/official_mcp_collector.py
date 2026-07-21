@@ -5,7 +5,7 @@ import os
 import re
 import shutil
 import subprocess
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from execution.shadow_input import load_shadow_input
@@ -53,6 +53,28 @@ EXPLICITLY_DISALLOWED_TOOLS = (
     "Task",
 )
 
+# The raw-snapshot collector gets an even narrower allowlist: market data only.
+# Account/portfolio/order/position tools are excluded so no account identifier
+# can ever enter the harvested stream; the vault's forbidden-key scan then
+# provides a second, independent layer.
+#
+# Earnings uses get_earnings_results (symbol-scoped, trailing 8 quarters, small)
+# and NOT get_earnings_calendar: the calendar tool has no symbol parameter, so
+# it returns a market-wide window that overflows the harness tool-output cap and
+# fails the run closed (observed live 2026-07-21 06:10 canary).
+RAW_COLLECTOR_TOOLS = (
+    "get_equity_quotes",
+    "get_equity_historicals",
+    "get_option_chains",
+    "get_option_instruments",
+    "get_option_quotes",
+    "get_earnings_results",
+)
+
+# Every one of these must appear in the harvested stream at least once or the
+# snapshot is incomplete and the run fails closed.
+RAW_REQUIRED_TOOLS = frozenset(RAW_COLLECTOR_TOOLS)
+
 
 def claude_binary() -> str:
     """Locate the Claude Code CLI; unattended collection fails closed without it."""
@@ -75,12 +97,34 @@ def read_only_allowed_tools() -> str:
     return ",".join(f"mcp__{MCP_SERVER_NAME}__{name}" for name in READ_ONLY_ROBINHOOD_TOOLS)
 
 
+def raw_collector_allowed_tools() -> str:
+    return ",".join(f"mcp__{MCP_SERVER_NAME}__{name}" for name in RAW_COLLECTOR_TOOLS)
+
+
 def _read_only_collector_command() -> list[str]:
     return [
         claude_binary(),
         "-p",
         "--output-format", "json",
         "--allowedTools", read_only_allowed_tools(),
+        "--disallowedTools", ",".join(EXPLICITLY_DISALLOWED_TOOLS),
+    ]
+
+
+def _raw_harvest_command() -> list[str]:
+    """Stream-JSON command for the raw collector.
+
+    The agent only *invokes* read-only tools; deterministic local code harvests
+    each tool's request and byte-faithful response from the stream, so no
+    market data ever round-trips through the model's own output.
+    """
+
+    return [
+        claude_binary(),
+        "-p",
+        "--output-format", "stream-json",
+        "--verbose",
+        "--allowedTools", raw_collector_allowed_tools(),
         "--disallowedTools", ",".join(EXPLICITLY_DISALLOWED_TOOLS),
     ]
 
@@ -124,6 +168,163 @@ def _safe_failure_detail(stderr: str | None) -> str:
     return tail[-2000:]
 
 
+# ISO-8601 with an explicit time and offset (Z or +hh:mm); fractional seconds
+# beyond microseconds (Robinhood emits nanoseconds) are truncated before parse.
+_ISO_TIMESTAMP = re.compile(
+    r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})"
+)
+
+
+def _parse_iso_aware(text: str) -> datetime | None:
+    normalized = text.replace(" ", "T")
+    if normalized.endswith("Z"):
+        normalized = normalized[:-1] + "+00:00"
+    normalized = re.sub(r"\.(\d{6})\d+", r".\1", normalized)
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return None
+    return parsed
+
+
+# Clock-skew allowance when rejecting future-dated timestamps: option and
+# earnings payloads legitimately contain FUTURE datetimes (expirations,
+# scheduled report times) which must never be mistaken for an observation time.
+_MAX_CLOCK_SKEW_SECONDS = 300
+
+
+def _freshest_source_timestamp(
+    response_texts: list[str], *, not_after: datetime | None = None
+) -> datetime:
+    """Deterministically extract the newest official *observation* timestamp.
+
+    The model no longer supplies `source_updated_at`; it is derived from
+    timestamps literally present in the harvested tool responses, so it cannot
+    be fabricated. Timestamps later than the local collection time (plus a
+    small clock-skew allowance) are schedule fields such as option expirations
+    or upcoming earnings dates, never observations, and are ignored. No
+    eligible timestamp at all fails closed.
+    """
+
+    ceiling = (not_after or datetime.now(timezone.utc)) + timedelta(
+        seconds=_MAX_CLOCK_SKEW_SECONDS
+    )
+    freshest: datetime | None = None
+    for text in response_texts:
+        for match in _ISO_TIMESTAMP.findall(text):
+            parsed = _parse_iso_aware(match)
+            if parsed is None or parsed > ceiling:
+                continue
+            if freshest is None or parsed > freshest:
+                freshest = parsed
+    if freshest is None:
+        raise OfficialCollectorError(
+            "No official past-or-present source timestamp present in harvested responses."
+        )
+    return freshest
+
+
+def _result_text(content: object) -> str:
+    """Extract the raw text of a tool_result; unknown shapes fail closed."""
+
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = [
+            block.get("text", "")
+            for block in content
+            if isinstance(block, dict) and block.get("type") == "text"
+        ]
+        if parts:
+            return "".join(parts)
+    raise OfficialCollectorError("Unsupported tool_result content shape.")
+
+
+def _harvest_stream(stdout: str, expected_prefix: str) -> tuple[list[dict], list[dict], list[str]]:
+    """Parse claude stream-json output into ordered (request, response) pairs.
+
+    This is the security boundary for raw collection. Every line must be JSON;
+    every Robinhood tool call must have exactly one non-error result whose text
+    parses as JSON (a disk-spill/truncation notice does not, and fails closed);
+    the terminal result line must report success.
+    """
+
+    tool_calls: list[dict] = []          # ordered {id, tool, input}
+    results_by_id: dict[str, object] = {}
+    response_texts: list[str] = []
+    terminal: dict | None = None
+    for line in stdout.splitlines():
+        if not line.strip():
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError as error:
+            raise OfficialCollectorError("Claude stream output contained a non-JSON line.") from error
+        if not isinstance(event, dict):
+            raise OfficialCollectorError("Claude stream line is not an object.")
+        kind = event.get("type")
+        if kind == "assistant":
+            content = (event.get("message") or {}).get("content") or []
+            for block in content:
+                if not isinstance(block, dict) or block.get("type") != "tool_use":
+                    continue
+                name = str(block.get("name") or "")
+                if not name.startswith("mcp__"):
+                    continue  # harness-internal tools (e.g. ToolSearch)
+                if not name.startswith(expected_prefix):
+                    raise OfficialCollectorError(f"Unexpected MCP tool in stream: {name}")
+                tool_calls.append({
+                    "id": str(block.get("id") or ""),
+                    "tool": name[len(expected_prefix):],
+                    "input": block.get("input"),
+                })
+        elif kind == "user":
+            content = (event.get("message") or {}).get("content")
+            if not isinstance(content, list):
+                continue
+            for block in content:
+                if not isinstance(block, dict) or block.get("type") != "tool_result":
+                    continue
+                results_by_id[str(block.get("tool_use_id") or "")] = block
+        elif kind == "result":
+            terminal = event
+    if terminal is None:
+        raise OfficialCollectorError("Claude stream ended without a terminal result event.")
+    if terminal.get("subtype") != "success" or terminal.get("is_error") is not False:
+        raise OfficialCollectorError("Claude runner reported an unsuccessful terminal result.")
+    if not tool_calls:
+        raise OfficialCollectorError("No official MCP tool calls were harvested.")
+    requests: list[dict] = []
+    responses: list[dict] = []
+    for call in tool_calls:
+        block = results_by_id.get(call["id"])
+        if block is None:
+            raise OfficialCollectorError(f"Tool call {call['tool']} has no result in the stream.")
+        if isinstance(block, dict) and block.get("is_error"):
+            raise OfficialCollectorError(f"Tool call {call['tool']} returned an error result.")
+        text = _result_text(block.get("content") if isinstance(block, dict) else None)
+        try:
+            output = json.loads(text)
+        except json.JSONDecodeError as error:
+            raise OfficialCollectorError(
+                f"Tool result for {call['tool']} is not valid JSON (possible truncation)."
+            ) from error
+        if not isinstance(output, (dict, list)):
+            raise OfficialCollectorError(f"Tool result for {call['tool']} is not a JSON object or array.")
+        requests.append({"tool": call["tool"], "input": call["input"]})
+        responses.append({"tool": call["tool"], "output": output})
+        response_texts.append(text)
+    called = {call["tool"] for call in tool_calls}
+    missing = RAW_REQUIRED_TOOLS - called
+    if missing:
+        raise OfficialCollectorError(
+            "Harvested snapshot is incomplete; missing tools: " + ",".join(sorted(missing))
+        )
+    return requests, responses, response_texts
+
+
 def _aware_datetime(value: object) -> datetime:
     if not isinstance(value, str):
         raise OfficialCollectorError("Raw source timestamp is missing.")
@@ -142,16 +343,24 @@ def collect_official_raw_snapshot(
     *,
     project_root: str | Path = ".",
     vault_root: str | Path = "logs/raw",
-    timeout_seconds: int = 180,
+    timeout_seconds: int = 300,
 ) -> RawSnapshotReceipt:
-    """Collect transport-only official MCP data; no model feature calculation."""
+    """Collect transport-only official MCP data; no model feature calculation.
+
+    The sub-agent only issues bounded read-only tool calls. Deterministic local
+    code harvests each call's request and byte-faithful response from the
+    stream-json transcript, derives `source_updated_at` from timestamps
+    literally present in the responses, and stores the envelope in the
+    immutable vault. The model never re-types market data and cannot fabricate
+    any stored value; every irregularity fails closed.
+    """
 
     normalized_symbol = symbol.strip().upper()
     if not SYMBOL_PATTERN.fullmatch(normalized_symbol):
         raise OfficialCollectorError("Invalid equity symbol.")
     root = Path(project_root).resolve()
     prompt = (root / "prompts/robinhood_raw_collector.md").read_text(encoding="utf-8").format(symbol=normalized_symbol)
-    command = _read_only_collector_command()
+    command = _raw_harvest_command()
     try:
         completed = subprocess.run(
             command, input=prompt, text=True, cwd=root, stdout=subprocess.PIPE,
@@ -165,24 +374,20 @@ def collect_official_raw_snapshot(
             f"exit={completed.returncode}; "
             f"{_safe_failure_detail(getattr(completed, 'stderr', None))}"
         )
-    envelope = _final_json_payload(completed.stdout)
-    if envelope.get("schema_version") != 1:
-        raise OfficialCollectorError("Unsupported raw snapshot schema.")
-    try:
-        request = json.loads(envelope.get("request", ""))
-        response = json.loads(envelope.get("response", ""))
-    except (TypeError, json.JSONDecodeError) as error:
-        raise OfficialCollectorError(
-            "Raw request/response strings must contain valid JSON."
-        ) from error
-    if not isinstance(request, dict) or not isinstance(response, dict):
-        raise OfficialCollectorError("Raw request/response objects are required.")
+    expected_prefix = f"mcp__{MCP_SERVER_NAME}__"
+    requests, responses, response_texts = _harvest_stream(completed.stdout, expected_prefix)
+    received_at = datetime.now(timezone.utc)
     return RawDataVault(root / vault_root).store(
         source="ROBINHOOD_OFFICIAL_MCP",
-        request=request,
-        response=response,
-        source_updated_at=_aware_datetime(envelope.get("source_updated_at")),
-        received_at=datetime.now(timezone.utc),
+        request={
+            "schema_version": 1,
+            "transport": "CLAUDE_STREAM_JSON_HARVEST",
+            "symbol": normalized_symbol,
+            "tool_calls": requests,
+        },
+        response={"tool_results": responses},
+        source_updated_at=_freshest_source_timestamp(response_texts, not_after=received_at),
+        received_at=received_at,
     )
 
 

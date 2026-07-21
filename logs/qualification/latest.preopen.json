@@ -17,9 +17,11 @@
       "reasons": []
     }
   },
+  "claude_cli_available": true,
+  "claude_runtime_reasons": [],
   "expected_run_count": 17,
   "formal_shadow_authorized": false,
-  "generated_at": "2026-07-20T23:52:22.942709+00:00",
+  "generated_at": "2026-07-21T07:12:36.426846+00:00",
   "market_checks_pending": [
     "official_raw_mcp_snapshot",
     "raw_to_feature_reproducibility",
@@ -28,16 +30,32 @@
     "official_orders_positions_reconciliation",
     "fresh_option_quote"
   ],
-  "note": "launchd is the sole primary scheduler; legacy app automations are paused to prevent duplicate runs. PREOPEN_READY authorizes read-only Pilot preparation only; market gates and formal Shadow authorization remain separate.",
+  "note": "launchd is the sole primary scheduler; the agent runtime is the Claude Code CLI with a read-only tool allowlist. PREOPEN_READY authorizes read-only Pilot preparation only; market gates and formal Shadow authorization remain separate.",
+  "observation_day": "2026-07-21",
   "offline_ready": true,
   "required_expectations": {
-    "close_summary": true,
-    "first_sample": true,
-    "market_gate": true,
-    "preopen_canary": true
+    "launchd-canary-20260721-0610.expected.json": true,
+    "market-gate-20260721-0635.expected.json": true,
+    "pilot-20260721-0703.expected.json": true,
+    "pilot-20260721-0723.expected.json": true,
+    "pilot-20260721-0743.expected.json": true,
+    "pilot-20260721-0803.expected.json": true,
+    "pilot-20260721-0823.expected.json": true,
+    "pilot-20260721-0843.expected.json": true,
+    "pilot-20260721-0903.expected.json": true,
+    "pilot-20260721-0923.expected.json": true,
+    "pilot-20260721-0943.expected.json": true,
+    "pilot-20260721-1003.expected.json": true,
+    "pilot-20260721-1023.expected.json": true,
+    "pilot-20260721-1043.expected.json": true,
+    "pilot-20260721-1103.expected.json": true,
+    "pilot-20260721-1123.expected.json": true,
+    "pilot-close-canary-20260721-1305.expected.json": true
   },
+  "robinhood_mcp_configured": true,
   "safety": {
     "approved_trade_stage": 1,
+    "automation_halted": false,
     "kill_switch_engaged": true,
     "kill_switch_reason": "TRADING_ARM_MARKER_ABSENT",
     "live_trading_enabled": false,
@@ -48,9 +66,9 @@
   },
   "safety_ok": true,
   "schema_version": 1,
-  "shadow_worker_detail_tail": "\n\t\t\tservice = com.robinhood-ai-trader.shadow-worker-v2\n\t\t\tstream = com.apple.launchd.calendarinterval\n\t\t\tmonitor = com.apple.UserEventAgent-Aqua\n\t\t\tdescriptor = {\n\t\t\t\t\"Minute\" => 43\n\t\t\t\t\"Hour\" => 8\n\t\t\t\t\"Day\" => 21\n\t\t\t\t\"Month\" => 7\n\t\t\t}\n\t\t}\n\t\tcom.robinhood-ai-trader.shadow-worker-v2.268435778 => {\n\t\t\tkeepalive = 0\n\t\t\tservice = com.robinhood-ai-trader.shadow-worker-v2\n\t\t\tstream = com.apple.launchd.calendarinterval\n\t\t\tmonitor = com.apple.UserEventAgent-Aqua\n\t\t\tdescriptor = {\n\t\t\t\t\"Minute\" => 3\n\t\t\t\t\"Hour\" => 11\n\t\t\t\t\"Day\" => 21\n\t\t\t\t\"Month\" => 7\n\t\t\t}\n\t\t}\n\t\tcom.robinhood-ai-trader.shadow-worker-v2.268435765 => {\n\t\t\tkeepalive = 0\n\t\t\tservice = com.robinhood-ai-trader.shadow-worker-v2\n\t\t\tstream = com.apple.launchd.calendarinterval\n\t\t\tmonitor = com.apple.UserEventAgent-Aqua\n\t\t\tdescriptor = {\n\t\t\t\t\"Minute\" => 35\n\t\t\t\t\"Hour\" => 6\n\t\t\t\t\"Day\" => 21\n\t\t\t\t\"Month\" => 7\n\t\t\t}\n\t\t}\n\t\tcom.robinhood-ai-trader.shadow-worker-v2.268435770 => {\n\t\t\tkeepalive = 0\n\t\t\tservice = com.robinhood-ai-trader.shadow-worker-v2\n\t\t\tstream = com.apple.launchd.calendarinterval\n\t\t\tmonitor = com.apple.UserEventAgent-Aqua\n\t\t\tdescriptor = {\n\t\t\t\t\"Minute\" => 23\n\t\t\t\t\"Hour\" => 8\n\t\t\t\t\"Day\" => 21\n\t\t\t\t\"Month\" => 7\n\t\t\t}\n\t\t}\n\t\tcom.robinhood-ai-trader.shadow-worker-v2.268435777 => {\n\t\t\tkeepalive = 0\n\t\t\tservice = com.robinhood-ai-trader.shadow-worker-v2\n\t\t\tstream = com.apple.launchd.calendarinterval\n\t\t\tmonitor = com.apple.UserEventAgent-Aqua\n\t\t\tdescriptor = {\n\t\t\t\t\"Minute\" => 43\n\t\t\t\t\"Hour\" => 10\n\t\t\t\t\"Day\" => 21\n\t\t\t\t\"Month\" => 7\n\t\t\t}\n\t\t}\n\t}\n\n\tevent channels = {\n\t\t\"com.apple.launchd.calendarinterval\" = {\n\t\t\tport = 0x0\n\t\t\tactive = 0\n\t\t\tmanaged = 1\n\t\t\treset = 0\n\t\t\thide = 0\n\t\t\twatching = 1\n\t\t}\n\t}\n\n\tspawn type = background (5)\n\tjetsam priority = 40\n\tjetsam memory limit (active) = (unlimited)\n\tjetsam memory limit (inactive) = (unlimited)\n\tjetsamproperties category = daemon\n\tjetsam thread limit = 32\n\tcpumon = default\n\tprobabilistic guard malloc policy = {\n\t\tactivation rate = 1/1000\n\t\tsample rate = 1/0\n\t}\n\n\tproperties = inferred program\n}\n",
+  "shadow_worker_detail_tail": "ve = 0\n\t\t\tservice = com.robinhood-ai-trader.shadow-worker-v2\n\t\t\tstream = com.apple.launchd.calendarinterval\n\t\t\tmonitor = com.apple.UserEventAgent-Aqua\n\t\t\tdescriptor = {\n\t\t\t\t\"Minute\" => 23\n\t\t\t\t\"Hour\" => 8\n\t\t\t\t\"Day\" => 21\n\t\t\t\t\"Month\" => 7\n\t\t\t}\n\t\t}\n\t\tcom.robinhood-ai-trader.shadow-worker-v2.268435810 => {\n\t\t\tkeepalive = 0\n\t\t\tservice = com.robinhood-ai-trader.shadow-worker-v2\n\t\t\tstream = com.apple.launchd.calendarinterval\n\t\t\tmonitor = com.apple.UserEventAgent-Aqua\n\t\t\tdescriptor = {\n\t\t\t\t\"Minute\" => 3\n\t\t\t\t\"Hour\" => 10\n\t\t\t\t\"Day\" => 21\n\t\t\t\t\"Month\" => 7\n\t\t\t}\n\t\t}\n\t\tcom.robinhood-ai-trader.shadow-worker-v2.268435804 => {\n\t\t\tkeepalive = 0\n\t\t\tservice = com.robinhood-ai-trader.shadow-worker-v2\n\t\t\tstream = com.apple.launchd.calendarinterval\n\t\t\tmonitor = com.apple.UserEventAgent-Aqua\n\t\t\tdescriptor = {\n\t\t\t\t\"Minute\" => 3\n\t\t\t\t\"Hour\" => 8\n\t\t\t\t\"Day\" => 21\n\t\t\t\t\"Month\" => 7\n\t\t\t}\n\t\t}\n\t\tcom.robinhood-ai-trader.shadow-worker-v2.268435803 => {\n\t\t\tkeepalive = 0\n\t\t\tservice = com.robinhood-ai-trader.shadow-worker-v2\n\t\t\tstream = com.apple.launchd.calendarinterval\n\t\t\tmonitor = com.apple.UserEventAgent-Aqua\n\t\t\tdescriptor = {\n\t\t\t\t\"Minute\" => 43\n\t\t\t\t\"Hour\" => 7\n\t\t\t\t\"Day\" => 21\n\t\t\t\t\"Month\" => 7\n\t\t\t}\n\t\t}\n\t\tcom.robinhood-ai-trader.shadow-worker-v2.268435815 => {\n\t\t\tkeepalive = 0\n\t\t\tservice = com.robinhood-ai-trader.shadow-worker-v2\n\t\t\tstream = com.apple.launchd.calendarinterval\n\t\t\tmonitor = com.apple.UserEventAgent-Aqua\n\t\t\tdescriptor = {\n\t\t\t\t\"Minute\" => 5\n\t\t\t\t\"Hour\" => 13\n\t\t\t\t\"Day\" => 21\n\t\t\t\t\"Month\" => 7\n\t\t\t}\n\t\t}\n\t}\n\n\tevent channels = {\n\t\t\"com.apple.launchd.calendarinterval\" = {\n\t\t\tport = 0x0\n\t\t\tactive = 0\n\t\t\tmanaged = 1\n\t\t\treset = 0\n\t\t\thide = 0\n\t\t\twatching = 1\n\t\t}\n\t}\n\n\tspawn type = daemon (3)\n\tjetsam priority = 40\n\tjetsam memory limit (active) = (unlimited)\n\tjetsam memory limit (inactive) = (unlimited)\n\tjetsamproperties category = daemon\n\tjetsam thread limit = 32\n\tcpumon = default\n\tprobabilistic guard malloc policy = {\n\t\tactivation rate = 1/1000\n\t\tsample rate = 1/0\n\t}\n\n\tproperties = inferred program\n}\n",
   "shadow_worker_loaded": true,
   "status": "PREOPEN_READY",
-  "watchdog_detail_tail": "gui/502/com.robinhood-ai-trader.watchdog = {\n\tactive count = 0\n\tpath = /Users/ge/Library/LaunchAgents/com.robinhood-ai-trader.watchdog.plist\n\ttype = LaunchAgent\n\tstate = not running\n\n\tprogram = /Library/Frameworks/Python.framework/Versions/3.13/bin/python3\n\targuments = {\n\t\t/Library/Frameworks/Python.framework/Versions/3.13/bin/python3\n\t\t/Users/ge/Documents/AI trading agent/robinhood-ai-trader/scripts/watchdog_tick.py\n\t}\n\n\tworking directory = /Users/ge/Documents/AI trading agent/robinhood-ai-trader\n\n\tstdout path = /Users/ge/Documents/AI trading agent/robinhood-ai-trader/logs/watchdog.stdout.log\n\tstderr path = /Users/ge/Documents/AI trading agent/robinhood-ai-trader/logs/watchdog.stderr.log\n\tinherited environment = {\n\t\tSSH_AUTH_SOCK => /private/tmp/com.apple.launchd.FniubxOvRh/Listeners\n\t}\n\n\tdefault environment = {\n\t\tPATH => /usr/bin:/bin:/usr/sbin:/sbin\n\t}\n\n\tenvironment = {\n\t\tXPC_SERVICE_NAME => com.robinhood-ai-trader.watchdog\n\t}\n\n\tdomain = gui/502 [112306]\n\tasid = 112306\n\tminimum runtime = 10\n\texit timeout = 5\n\truns = 212\n\tlast exit code = 0\n\n\tspawn type = daemon (3)\n\tjetsam priority = 40\n\tjetsam memory limit (active) = (unlimited)\n\tjetsam memory limit (inactive) = (unlimited)\n\tjetsamproperties category = daemon\n\tjetsam thread limit = 32\n\tcpumon = default\n\trun interval = 60 seconds\n\tprobabilistic guard malloc policy = {\n\t\tactivation rate = 1/1000\n\t\tsample rate = 1/0\n\t}\n\n\tproperties = inferred program\n}\n",
+  "watchdog_detail_tail": "gui/502/com.robinhood-ai-trader.watchdog = {\n\tactive count = 0\n\tpath = /Users/ge/Library/LaunchAgents/com.robinhood-ai-trader.watchdog.plist\n\ttype = LaunchAgent\n\tstate = not running\n\n\tprogram = /Library/Frameworks/Python.framework/Versions/3.13/bin/python3\n\targuments = {\n\t\t/Library/Frameworks/Python.framework/Versions/3.13/bin/python3\n\t\t/Users/ge/ge/aitrading/scripts/watchdog_tick.py\n\t}\n\n\tworking directory = /Users/ge/ge/aitrading\n\n\tstdout path = /Users/ge/ge/aitrading/logs/watchdog.stdout.log\n\tstderr path = /Users/ge/ge/aitrading/logs/watchdog.stderr.log\n\tinherited environment = {\n\t\tSSH_AUTH_SOCK => /private/tmp/com.apple.launchd.FniubxOvRh/Listeners\n\t}\n\n\tdefault environment = {\n\t\tPATH => /usr/bin:/bin:/usr/sbin:/sbin\n\t}\n\n\tenvironment = {\n\t\tPATH => /Library/Frameworks/Python.framework/Versions/3.13/bin:/opt/homebrew/bin:/usr/local/bin:/Users/ge/.local/bin:/Users/ge/.claude/local:/usr/bin:/bin\n\t\tXPC_SERVICE_NAME => com.robinhood-ai-trader.watchdog\n\t}\n\n\tdomain = gui/502 [112306]\n\tasid = 112306\n\tminimum runtime = 10\n\texit timeout = 5\n\truns = 0\n\tlast exit code = (never exited)\n\n\tspawn type = daemon (3)\n\tjetsam priority = 40\n\tjetsam memory limit (active) = (unlimited)\n\tjetsam memory limit (inactive) = (unlimited)\n\tjetsamproperties category = daemon\n\tjetsam thread limit = 32\n\tcpumon = default\n\trun interval = 60 seconds\n\tprobabilistic guard malloc policy = {\n\t\tactivation rate = 1/1000\n\t\tsample rate = 1/0\n\t}\n\n\tproperties = inferred program\n}\n",
   "watchdog_loaded": true
 }

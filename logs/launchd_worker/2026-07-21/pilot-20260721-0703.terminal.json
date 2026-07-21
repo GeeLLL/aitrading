@@ -1,0 +1,161 @@
+{
+  "schema_version": 1,
+  "status": "COMPLETED_NO_TRADE",
+  "run_id": "pilot-20260721-0703",
+  "kind": "PILOT_SAMPLE",
+  "symbol": "SPY",
+  "scheduled_for": "2026-07-21T14:03:00+00:00",
+  "ack_path": "logs/scheduler/pilot-20260721-0703.start.json",
+  "started_at": "2026-07-21T14:03:05+00:00",
+  "ended_at": "2026-07-21T14:07:52+00:00",
+  "agent_runtime": "CLAUDE_CODE_CLI",
+  "read_only": true,
+  "live_trading_enabled": false,
+  "order_tools_enabled": false,
+  "kill_switch_engaged": true,
+  "kill_switch_reason": "TRADING_ARM_MARKER_ABSENT",
+  "evidence_class": "PILOT_EXCLUDED_FROM_PERFORMANCE",
+  "preflight": {
+    "system_mode": "READ_ONLY",
+    "status_gate": "PASS",
+    "unfinished_trajectories_refreshed": 0,
+    "unfinished_trajectories_note": "No prior trajectory files existed for 2026-07-21; step 1 vacuously satisfied."
+  },
+  "upstream_gate": {
+    "market_gate_run_id": "market-gate-20260721-0635",
+    "market_gate_status": "FAILED_CLOSED",
+    "market_gate_detail": "4 PASS / 1 FAIL (immutable raw MCP snapshot) / 1 UNKNOWN (deterministic replay equality)",
+    "effect_on_this_run": "Formal Shadow remains unauthorized. This PILOT_SAMPLE run is research-only and excluded from performance, so it proceeded; no Shadow evidence was produced."
+  },
+  "market_data": {
+    "universe_source": "config/universe.toml",
+    "symbols": [
+      "SPY",
+      "QQQ",
+      "IWM",
+      "AAPL",
+      "MSFT",
+      "NVDA",
+      "AMZN",
+      "META",
+      "TSLA",
+      "AMD"
+    ],
+    "bar_interval_minutes": 5,
+    "completed_bars_per_symbol": 54,
+    "interpolated_bars_used": 0,
+    "newest_completed_bar_begins_at": "2026-07-21T13:55:00Z",
+    "newest_completed_bar_ends_at": "2026-07-21T14:00:00Z",
+    "newest_completed_bar_age_seconds_at_check": 257,
+    "newest_completed_bar_limit_seconds": 420,
+    "newest_completed_bar_freshness": "PASS",
+    "quote_batch_venue_time": "2026-07-21T14:04:03Z",
+    "quote_age_seconds_at_receipt": 14,
+    "lookback_bars_exempt_from_freshness_rule": true
+  },
+  "evaluation": {
+    "parameter_source": "strategy/strategy_v1.0.toml",
+    "volume_average_lookback_bars": 20,
+    "breakout_lookback_completed_bars": 6,
+    "fast_ema_period": 9,
+    "slow_ema_period": 20,
+    "market_regime_reference_symbols": [
+      "SPY",
+      "QQQ"
+    ],
+    "market_regime": "NO_TRADE",
+    "market_regime_reasons": [
+      "SPY_INDICATORS_NOT_ALIGNED",
+      "QQQ_INDICATORS_NOT_ALIGNED"
+    ],
+    "volume_ratio_by_symbol": {
+      "SPY": 0.5283,
+      "QQQ": 0.7241,
+      "IWM": 0.4051,
+      "AAPL": 0.7815,
+      "MSFT": 0.6937,
+      "NVDA": 1.346,
+      "AMZN": 0.9122,
+      "META": 0.6029,
+      "TSLA": 1.156,
+      "AMD": 1.4852
+    },
+    "labels": {
+      "BASE_25": {
+        "minimum_volume_ratio": 2.5,
+        "result": "NO_TRADE",
+        "qualified_symbols": [],
+        "reason": "VOLUME_CONFIRMATION_FAILED for all 10 symbols; upstream MARKET_REGIME_NOT_DIRECTIONAL"
+      },
+      "BASE_30": {
+        "minimum_volume_ratio": 3.0,
+        "result": "NO_TRADE",
+        "qualified_symbols": [],
+        "reason": "VOLUME_CONFIRMATION_FAILED for all 10 symbols; upstream MARKET_REGIME_NOT_DIRECTIONAL"
+      },
+      "AI_RANK_V1": {
+        "result": "ABSTAIN",
+        "qualified_symbols": [],
+        "reason": "Zero deterministically qualified candidates. AI may rank or abstain only; with an empty qualified set the only permitted action is ABSTAIN. AI did not override any deterministic gate."
+      },
+      "NEAR_MISS": {
+        "result": "RECORDED_UNDERLYING_LEVEL_ONLY",
+        "candidates": [
+          {
+            "symbol": "AMD",
+            "volume_ratio": 1.4852,
+            "rejection_reasons": [
+              "VOLUME_CONFIRMATION_FAILED",
+              "MARKET_REGIME_NOT_DIRECTIONAL"
+            ]
+          },
+          {
+            "symbol": "NVDA",
+            "volume_ratio": 1.346,
+            "rejection_reasons": [
+              "VOLUME_CONFIRMATION_FAILED",
+              "MARKET_REGIME_NOT_DIRECTIONAL"
+            ]
+          }
+        ],
+        "reason": "Two highest volume ratios recorded as near-miss research observations. Neither reached contract selection: the market-regime gate is upstream and returned NO_TRADE, so no direction (call/put) is deterministically defined and no contract could be chosen without inventing one."
+      }
+    }
+  },
+  "policy_trade": {
+    "virtual_candidates_used_today": 0,
+    "daily_limit": 1,
+    "selected_contract": null,
+    "outcome": "NO_TRADE"
+  },
+  "option_quote_refresh": {
+    "performed": false,
+    "reason": "No contract was selected under any label, so there was no instrument to refresh. No option MCP calls were made."
+  },
+  "simulated_fills": {
+    "entries": 0,
+    "exits": 0,
+    "reason": "No candidate reached contract selection; no fill, spread, latency, or friction figures are applicable. Nothing was assumed at mark."
+  },
+  "trajectories": {
+    "root": "logs/quote_trajectories/2026-07-21/",
+    "events_written": 0,
+    "reason": "config/quote_trajectory.schema.json requires instrument_id, option_type, strike and expiration_date on every event. With no selected contract these fields have no observed values, and inventing them would fabricate data. Zero events written rather than partial or synthetic ones."
+  },
+  "timing": {
+    "mcp_call_cutoff_seconds": 360,
+    "last_mcp_call_elapsed_seconds": 236,
+    "mcp_cutoff_respected": true,
+    "log_completion_budget_seconds": 480
+  },
+  "caveats": [
+    "FREEZE CEREMONY INCOMPLETE: TODO.md:191 ('Freeze BASE_25, BASE_30, and AI_RANK_V1 before the next market sample') is still unchecked. Label semantics were taken from research/ACCELERATED_PROFITABILITY_AND_AI_EDGE_V1_CN.md (volume ratio >= 2.5 / >= 3.0) with all other parameters from strategy/strategy_v1.0.toml. These results are provisional until an owner performs the formal freeze; they must not be treated as frozen-label evidence.",
+    "strategy/strategy_v1.0.toml carries status = 'DESIGN', not an approved/frozen status.",
+    "VWAP is not supplied by the official MCP bar feed and is not pinned in strategy_v1.0.toml. Session VWAP was derived as volume-weighted typical price ((H+L+C)/3) over completed 2026-07-21 regular-hours bars. This derivation is an unpinned choice and feeds the regime gate; it should be pinned before any formal use.",
+    "The 20-bar volume average is a rolling window that crosses the session boundary: for the 13:55Z bar it spans today's first 5 bars plus yesterday's final 15. Mixing high-volume opening bars into the denominator materially depresses mid-morning volume ratios. This follows the pinned volume_average_lookback_bars = 20 definition and was NOT altered, but the session-boundary behaviour deserves owner review.",
+    "EMA-20 seeds from a 20-bar simple average with only 54 bars of history; warmup is short and the slow EMA is correspondingly approximate.",
+    "The upstream MARKET_GATE for today failed closed on the immutable raw MCP snapshot, so no run today has a verified immutable snapshot backing it."
+  ],
+  "failure_reason": null,
+  "dashboard_rebuild_status": "COMPLETED"
+}
