@@ -17,4 +17,10 @@ purpose = "COST_WALL_CALIBRATION"
 # candidates to be confirmed by real calibration data, not an endorsement.
 never_a_trading_universe = true
 
-symbols = ["F", "SOFI", "T", "BAC", "INTC", "PLTR", "NIO", "XLF"]
+# Broadened for a data-rich calibration day. The <=$120 premium filter in
+# friction-calibrate self-selects which of these actually have affordable
+# contracts, so a wide candidate net is fine — the data decides membership.
+symbols = [
+    "F", "SOFI", "T", "BAC", "INTC", "PLTR", "NIO", "XLF",
+    "AAL", "CCL", "RIVN", "PFE", "SNAP", "HOOD",
+]
