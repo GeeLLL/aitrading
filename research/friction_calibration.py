@@ -121,6 +121,7 @@ class CalibratedFriction:
     median_abs_theta_per_day: Decimal
     median_volume: int
     median_open_interest: int
+    per_symbol: dict[str, Any]
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -139,6 +140,7 @@ class CalibratedFriction:
             "median_abs_theta_per_day_usd": str(self.median_abs_theta_per_day),
             "median_volume": self.median_volume,
             "median_open_interest": self.median_open_interest,
+            "per_symbol": self.per_symbol,
         }
 
 
@@ -153,7 +155,7 @@ def calibrate_friction(
     maximum_premium_usd: Decimal | None = None,
 ) -> CalibratedFriction:
     paths = [Path(p) for p in snapshot_paths]
-    observations: list[QuoteObservation] = []
+    observations: list[tuple[str, QuoteObservation]] = []  # (symbol, observation)
     total_quotes = 0
     used = 0
     for path in paths:
@@ -162,22 +164,24 @@ def calibrate_friction(
         except (OSError, json.JSONDecodeError):
             continue
         used += 1
+        request = envelope.get("request")
+        symbol = str(request.get("symbol")) if isinstance(request, dict) else "UNKNOWN"
         for quote in extract_option_quotes(envelope):
             total_quotes += 1
             observed = _observe(quote)
             if observed is not None:
-                observations.append(observed)
+                observations.append((symbol, observed))
 
     delta_eligible = [
-        o for o in observations if delta_min <= o.abs_delta <= delta_max
+        (s, o) for (s, o) in observations if delta_min <= o.abs_delta <= delta_max
     ]
     # Affordability is a hard account rule: premium = mid * 100 must fit the ceiling.
     if maximum_premium_usd is not None:
-        affordable = [o for o in delta_eligible if o.mid_price * Decimal("100") <= maximum_premium_usd]
+        affordable = [(s, o) for (s, o) in delta_eligible if o.mid_price * Decimal("100") <= maximum_premium_usd]
     else:
         affordable = delta_eligible
     liquid = [
-        o for o in affordable
+        (s, o) for (s, o) in affordable
         if o.volume >= minimum_volume
         and o.open_interest >= minimum_open_interest
         and o.relative_spread <= max_relative_spread
@@ -194,7 +198,26 @@ def calibrate_friction(
             "collect raw snapshots on cheaper underlyings."
         )
 
-    spreads = [o.relative_spread for o in sample]
+    obs = [o for _s, o in sample]
+    spreads = [o.relative_spread for o in obs]
+    # Per-symbol view over the affordable set, so you can see which cheap names
+    # actually offer buyable, liquid, tight-spread contracts.
+    liquid_symbols: dict[str, int] = {}
+    for s, _o in liquid:
+        liquid_symbols[s] = liquid_symbols.get(s, 0) + 1
+    per_symbol: dict[str, Any] = {}
+    by_symbol: dict[str, list[QuoteObservation]] = {}
+    for s, o in affordable:
+        by_symbol.setdefault(s, []).append(o)
+    for s in sorted(by_symbol):
+        items = by_symbol[s]
+        per_symbol[s] = {
+            "affordable_count": len(items),
+            "liquid_count": liquid_symbols.get(s, 0),
+            "median_relative_spread": str(_median([i.relative_spread for i in items])),
+            "median_mid_price_usd": str(_median([i.mid_price for i in items])),
+        }
+
     return CalibratedFriction(
         snapshots_used=used,
         total_quotes=total_quotes,
@@ -206,11 +229,12 @@ def calibrate_friction(
         median_relative_spread=_median(spreads),
         p25_relative_spread=_quantile(spreads, Decimal("0.25")),
         p75_relative_spread=_quantile(spreads, Decimal("0.75")),
-        median_mid_price=_median([o.mid_price for o in sample]),
-        median_abs_delta=_median([o.abs_delta for o in sample]),
-        median_abs_theta_per_day=_median([o.abs_theta_per_day for o in sample]),
-        median_volume=int(_median([Decimal(o.volume) for o in sample])),
-        median_open_interest=int(_median([Decimal(o.open_interest) for o in sample])),
+        median_mid_price=_median([o.mid_price for o in obs]),
+        median_abs_delta=_median([o.abs_delta for o in obs]),
+        median_abs_theta_per_day=_median([o.abs_theta_per_day for o in obs]),
+        median_volume=int(_median([Decimal(o.volume) for o in obs])),
+        median_open_interest=int(_median([Decimal(o.open_interest) for o in obs])),
+        per_symbol=per_symbol,
     )
 
 
