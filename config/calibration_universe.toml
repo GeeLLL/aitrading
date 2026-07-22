@@ -21,6 +21,6 @@ never_a_trading_universe = true
 # friction-calibrate self-selects which of these actually have affordable
 # contracts, so a wide candidate net is fine — the data decides membership.
 symbols = [
-    "F", "SOFI", "T", "BAC", "INTC", "PLTR", "NIO", "XLF",
+    "F", "SOFI", "BAC", "INTC", "PLTR", "NIO", "XLF",
     "AAL", "CCL", "RIVN", "PFE", "SNAP", "HOOD",
 ]
