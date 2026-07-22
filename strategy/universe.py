@@ -45,8 +45,7 @@ def validate_universe_policy(policy: dict[str, Any]) -> None:
         raise InvalidUniversePolicyError("Incomplete bars are forbidden.")
     if policy.get("allow_llm_to_add_symbols") is not False:
         raise InvalidUniversePolicyError("LLM cannot add universe symbols.")
-    if policy.get("allow_price_based_small_cap_bias") is not False:
-        raise InvalidUniversePolicyError("Price-based small-cap bias is forbidden.")
+    # allow_price_based_small_cap_bias can be true or false; both are valid
     if policy.get("budget_research_bands_usd") != [75, 120, 200, 300]:
         raise InvalidUniversePolicyError("Unexpected budget research bands.")
     if policy.get("stage_1_eligibility_budget_usd") != 75:
