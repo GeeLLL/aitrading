@@ -1,2 +1,43 @@
 __pycache__/
 *.pyc
+
+# Logs and temporary files
+logs/
+*.log
+.startup_status
+monitor_final_sampling.sh
+*.sh
+setup_5am_automation.sh
+
+# Analysis and documentation (session-specific)
+*TIMELINE*.md
+*ASSESSMENT*.md
+*STARTUP*.sh
+*AUTO*.sh
+*STATUS*.md
+INCIDENT_*.md
+POST_MORTEM*.md
+LAUNCH_*.sh
+TOMORROW*.md
+TODAY_*.md
+READINESS*.md
+FINAL_*.md
+CORRECTED_*.md
+REALTIME_*.md
+RELIABILITY_*.md
+AUTOMATED_*.md
+AUTOMATION_*.md
+
+# Keep only the core architecture files
+!scripts/cleanup_expired_incidents.py
+!scripts/run_sampling_recovery_mode.py
+!scripts/premarket_diagnostic.py
+!scripts/launchd_shadow_worker_smart.py
+!scripts/robust_sampling_coordinator.py
+!scripts/launch_production_system.sh
+!scripts/register_daily_expectations.sh
+!scripts/rotate_logs.sh
+!monitoring/enhanced_monitor.py
+!monitoring/data_integrity_validator.py
+!monitoring/market_calendar.py
+!monitoring/active_shadow_monitor.py
