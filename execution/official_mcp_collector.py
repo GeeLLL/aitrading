@@ -75,6 +75,19 @@ RAW_COLLECTOR_TOOLS = (
 # snapshot is incomplete and the run fails closed.
 RAW_REQUIRED_TOOLS = frozenset(RAW_COLLECTOR_TOOLS)
 
+# Tools whose responses can be large enough to overflow the harness tool-output
+# cap (a big option slice, a long history). In RESILIENT mode only, an overflow
+# of one of these degrades to a marked-absent output for that one tool instead of
+# failing the whole snapshot closed — so one bad tool never zeroes the sweep. The
+# remaining tools (quotes, chain metadata, earnings) are small and stay strictly
+# required: if one of those truncates, something is wrong and we still fail closed.
+# Strict mode (the default, used for formal evidence) degrades nothing.
+DEGRADABLE_TOOLS = frozenset({
+    "get_equity_historicals",
+    "get_option_instruments",
+    "get_option_quotes",
+})
+
 
 def claude_binary() -> str:
     """Locate the Claude Code CLI; unattended collection fails closed without it."""
@@ -242,13 +255,23 @@ def _result_text(content: object) -> str:
     raise OfficialCollectorError("Unsupported tool_result content shape.")
 
 
-def _harvest_stream(stdout: str, expected_prefix: str) -> tuple[list[dict], list[dict], list[str]]:
+def _harvest_stream(
+    stdout: str, expected_prefix: str, *, resilient: bool = False
+) -> tuple[list[dict], list[dict], list[str], tuple[str, ...]]:
     """Parse claude stream-json output into ordered (request, response) pairs.
 
     This is the security boundary for raw collection. Every line must be JSON;
     every Robinhood tool call must have exactly one non-error result whose text
     parses as JSON (a disk-spill/truncation notice does not, and fails closed);
     the terminal result line must report success.
+
+    In ``resilient`` mode, a truncated/overflowed/errored result for a tool in
+    ``DEGRADABLE_TOOLS`` is recorded as a marked-absent output (``output: None``,
+    ``truncated: True``) instead of failing the whole snapshot closed; the tool
+    name is returned in the fourth element so the caller can mark the snapshot
+    partial. No truncated bytes are ever stored. Non-degradable tools and strict
+    mode still fail closed on any irregularity. Returns
+    ``(requests, responses, response_texts, truncated_tools)``.
     """
 
     tool_calls: list[dict] = []          # ordered {id, tool, input}
@@ -298,23 +321,42 @@ def _harvest_stream(stdout: str, expected_prefix: str) -> tuple[list[dict], list
         raise OfficialCollectorError("No official MCP tool calls were harvested.")
     requests: list[dict] = []
     responses: list[dict] = []
+    truncated_tools: list[str] = []
     for call in tool_calls:
+        tool = call["tool"]
+        degradable = resilient and tool in DEGRADABLE_TOOLS
+
+        def _degrade(reason: str) -> None:
+            requests.append({"tool": tool, "input": call["input"]})
+            responses.append({"tool": tool, "output": None, "truncated": True, "reason": reason})
+            if tool not in truncated_tools:
+                truncated_tools.append(tool)
+
         block = results_by_id.get(call["id"])
         if block is None:
-            raise OfficialCollectorError(f"Tool call {call['tool']} has no result in the stream.")
+            if degradable:
+                _degrade("NO_RESULT_IN_STREAM")
+                continue
+            raise OfficialCollectorError(f"Tool call {tool} has no result in the stream.")
         if isinstance(block, dict) and block.get("is_error"):
-            raise OfficialCollectorError(f"Tool call {call['tool']} returned an error result.")
-        text = _result_text(block.get("content") if isinstance(block, dict) else None)
+            if degradable:
+                _degrade("TOOL_ERROR_RESULT")
+                continue
+            raise OfficialCollectorError(f"Tool call {tool} returned an error result.")
         try:
+            text = _result_text(block.get("content") if isinstance(block, dict) else None)
             output = json.loads(text)
-        except json.JSONDecodeError as error:
+            if not isinstance(output, (dict, list)):
+                raise OfficialCollectorError(f"Tool result for {tool} is not a JSON object or array.")
+        except (OfficialCollectorError, json.JSONDecodeError):
+            if degradable:
+                _degrade("OUTPUT_OVERFLOW_OR_TRUNCATION")
+                continue
             raise OfficialCollectorError(
-                f"Tool result for {call['tool']} is not valid JSON (possible truncation)."
-            ) from error
-        if not isinstance(output, (dict, list)):
-            raise OfficialCollectorError(f"Tool result for {call['tool']} is not a JSON object or array.")
-        requests.append({"tool": call["tool"], "input": call["input"]})
-        responses.append({"tool": call["tool"], "output": output})
+                f"Tool result for {tool} is not valid JSON (possible truncation)."
+            )
+        requests.append({"tool": tool, "input": call["input"]})
+        responses.append({"tool": tool, "output": output})
         response_texts.append(text)
     called = {call["tool"] for call in tool_calls}
     missing = RAW_REQUIRED_TOOLS - called
@@ -322,7 +364,7 @@ def _harvest_stream(stdout: str, expected_prefix: str) -> tuple[list[dict], list
         raise OfficialCollectorError(
             "Harvested snapshot is incomplete; missing tools: " + ",".join(sorted(missing))
         )
-    return requests, responses, response_texts
+    return requests, responses, response_texts, tuple(truncated_tools)
 
 
 def _aware_datetime(value: object) -> datetime:
@@ -344,6 +386,7 @@ def collect_official_raw_snapshot(
     project_root: str | Path = ".",
     vault_root: str | Path = "logs/raw",
     timeout_seconds: int = 300,
+    resilient: bool = False,
 ) -> RawSnapshotReceipt:
     """Collect transport-only official MCP data; no model feature calculation.
 
@@ -353,6 +396,12 @@ def collect_official_raw_snapshot(
     literally present in the responses, and stores the envelope in the
     immutable vault. The model never re-types market data and cannot fabricate
     any stored value; every irregularity fails closed.
+
+    ``resilient`` (opt-in; used by the read-only canary, never by formal
+    evidence) lets an overflow of one large-but-non-critical tool degrade to a
+    marked-absent output so a single bad tool does not zero the snapshot. The
+    stored envelope then carries ``partial: true`` and the list of degraded
+    tools, so a partial snapshot can never be mistaken for a complete one.
     """
 
     normalized_symbol = symbol.strip().upper()
@@ -375,16 +424,22 @@ def collect_official_raw_snapshot(
             f"{_safe_failure_detail(getattr(completed, 'stderr', None))}"
         )
     expected_prefix = f"mcp__{MCP_SERVER_NAME}__"
-    requests, responses, response_texts = _harvest_stream(completed.stdout, expected_prefix)
+    requests, responses, response_texts, truncated_tools = _harvest_stream(
+        completed.stdout, expected_prefix, resilient=resilient
+    )
     received_at = datetime.now(timezone.utc)
+    request_envelope: dict[str, object] = {
+        "schema_version": 1,
+        "transport": "CLAUDE_STREAM_JSON_HARVEST",
+        "symbol": normalized_symbol,
+        "tool_calls": requests,
+        "partial": bool(truncated_tools),
+    }
+    if truncated_tools:
+        request_envelope["truncated_tools"] = list(truncated_tools)
     return RawDataVault(root / vault_root).store(
         source="ROBINHOOD_OFFICIAL_MCP",
-        request={
-            "schema_version": 1,
-            "transport": "CLAUDE_STREAM_JSON_HARVEST",
-            "symbol": normalized_symbol,
-            "tool_calls": requests,
-        },
+        request=request_envelope,
         response={"tool_results": responses},
         source_updated_at=_freshest_source_timestamp(response_texts, not_after=received_at),
         received_at=received_at,

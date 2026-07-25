@@ -129,7 +129,10 @@ def _run_canary(run_id: str, symbol: str, ack_path: Path, log_root: Path) -> int
     summary_path = log_root / f"{run_id}.json"
     started = datetime.now(timezone.utc)
     try:
-        receipt = collect_official_raw_snapshot(symbol, project_root=ROOT)
+        # Read-only canary: degrade gracefully if one large tool overflows the
+        # harness cap, so a single bad tool never zeroes the snapshot. Any partial
+        # result is marked in the vault envelope and stays excluded from evidence.
+        receipt = collect_official_raw_snapshot(symbol, project_root=ROOT, resilient=True)
         verified = RawDataVault.verify(receipt.path, receipt.content_sha256)
         result_status = "COMPLETED"
         failure_reason = None

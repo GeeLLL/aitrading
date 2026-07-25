@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from monitoring.collection_observer import ensure_day_registered
 from monitoring.scheduler_watchdog import scan_expected_runs
 
 
@@ -44,8 +45,14 @@ def deliver_pending_alerts(alert_directory: Path = ALERT_DIR) -> int:
 
 
 def main() -> int:
+    now = datetime.now().astimezone()
+    # Close the "the Mac slept through every worker slot" gap: the watchdog runs
+    # independently of the worker, so registering today's expectations here means
+    # a slot that never fired still has an expectation on record and is flagged as
+    # a miss below, instead of vanishing silently. Idempotent; no-ops when closed.
+    ensure_day_registered(now, project_root=ROOT)
     results = scan_expected_runs(
-        checked_at=datetime.now().astimezone(),
+        checked_at=now,
         expectation_directory=ROOT / "logs/scheduler/expected",
         ack_directory=ROOT / "logs/scheduler",
         incident_directory=ROOT / "logs/incidents",

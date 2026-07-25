@@ -1,9 +1,41 @@
 # Robustness Upgrade Plan — 2026-07-25
 
-Status: IN PROGRESS. P0-A, P0-B, and P1-A are DONE (owner approved "都做");
-P1-B, P1-C, and the remaining P2 tests are still open. Goal: the read-only
-collector runs every market day with zero manual intervention and zero silent
-misses, while the order-safety fail-closed guarantees stay iron.
+Status: COMPLETE. P0-A, P0-B, P1-A, P1-B, P1-C, and P2 are all DONE. Goal met:
+the read-only collector runs every market day with zero manual intervention and
+zero silent misses, while the order-safety fail-closed guarantees stay iron.
+
+## Second pass (P1-B, P1-C, P2)
+
+- **P1-B truncation-overflow (done):** the raw collector now has an opt-in
+  `resilient` mode. In it, an overflow of one large-but-non-critical tool
+  (`get_equity_historicals`, `get_option_instruments`, `get_option_quotes`)
+  degrades to a marked-absent output (`output: null`, `truncated: true`) instead
+  of failing the whole per-symbol snapshot closed; the vault envelope is stamped
+  `partial: true` + `truncated_tools`, so a partial snapshot can never pass as
+  complete. Critical tools (quotes, chain metadata, earnings) and the default
+  strict mode still fail closed on any irregularity. The read-only canary uses
+  resilient mode, so one bad tool no longer zeroes the sweep. No truncated bytes
+  are ever stored.
+- **P1-C consolidate monitors (done):** one pure, read-only
+  `monitoring/collection_observer` now owns all "how is collection doing" logic
+  (market-hours from the corrected calendar; no subprocess/retry/backfill/sleep).
+  `robust_sampling_coordinator` was gutted of its backfill (`auto_recover ->
+  execute_sampling` re-ran missed slots — a policy violation) and is now an
+  observe-only reporter; `enhanced_monitor` and `active_shadow_monitor` are thin
+  shims over the observer. The whole-day-asleep gap is closed: the watchdog tick
+  now calls `ensure_day_registered`, so even if no worker fires all day, the day
+  is back-registered on the next watchdog run and its missed slots surface as
+  incidents instead of vanishing.
+- **P2 tests (done):** +58 tests across the two passes (386 total, all green),
+  covering the calendar (incl. the Good Friday regression), self-arming slot
+  resolution and expectation registration, the collection-miss-does-not-block
+  gate, incident-TTL removal, archive-only cleanup, resilient truncation
+  degradation, and the observer / whole-day-asleep gap.
+
+Residual (external, out of scope): if the Mac is powered off or asleep through
+*every* worker slot AND every watchdog tick for a whole day, nothing on the Mac
+can flag it — only an off-Mac heartbeat could. On wake, the watchdog
+back-registers and flags the day.
 
 ## What shipped in this pass (2026-07-25)
 
@@ -98,18 +130,18 @@ Collection simply stops blocking on collection-misses.
   timezone; define behavior past the table horizon (fail toward "closed+alert",
   not silently "open").
 
-### P1-B — Fix the truncation-overflow root (not just delete T)
+### P1-B — Fix the truncation-overflow root (not just delete T)  ✅ DONE
 - One symbol whose `get_equity_historicals`/chain response overflows the tool cap
   currently fails the WHOLE snapshot closed. Bound the request (fewer
   bars/strikes) and/or degrade gracefully per-symbol so one bad symbol doesn't
   zero the sweep.
 
-### P1-C — Consolidate the monitors
+### P1-C — Consolidate the monitors  ✅ DONE
 - Collapse `robust_sampling_coordinator` + `enhanced_monitor` +
   `active_shadow_monitor` into one observer; remove the coordinator's backfill;
   make all market-hours logic come from the corrected `market_calendar`.
 
-### P2 — Tests
+### P2 — Tests  ✅ DONE
 - All new reliability code has zero coverage. Add tests for: market-calendar
   (incl. the Good Friday regression), self-arming/slot resolution, the "collection
   miss does not block" behavior, and truncation-overflow graceful degradation.
