@@ -106,8 +106,8 @@ class PremarketDiagnostic:
         )
 
         self.check(
-            "launchd_shadow_worker_smart.py exists",
-            lambda: (self.root / "scripts/launchd_shadow_worker_smart.py").exists()
+            "self_arming_worker.py exists",
+            lambda: (self.root / "scripts/self_arming_worker.py").exists()
         )
 
         self.check(

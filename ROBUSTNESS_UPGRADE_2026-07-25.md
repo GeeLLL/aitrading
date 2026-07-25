@@ -1,8 +1,39 @@
 # Robustness Upgrade Plan — 2026-07-25
 
-Status: PROPOSED (awaiting owner go-ahead). Goal: the read-only collector runs
-every market day with zero manual intervention and zero silent misses, while the
-order-safety fail-closed guarantees stay iron.
+Status: IN PROGRESS. P0-A, P0-B, and P1-A are DONE (owner approved "都做");
+P1-B, P1-C, and the remaining P2 tests are still open. Goal: the read-only
+collector runs every market day with zero manual intervention and zero silent
+misses, while the order-safety fail-closed guarantees stay iron.
+
+## What shipped in this pass (2026-07-25)
+
+- **P1-A calendar (done):** `monitoring/market_calendar.py` now derives every
+  holiday from NYSE rules (computed Easter -> Good Friday), fixing the wrong Good
+  Friday dates (now 2026-04-03 / 2027-03-26) and the missing coverage past 2027.
+  Adds early-close detection, exchange-timezone anchoring (`market_date_now`), and
+  the documented New Year Saturday exception (Dec 31 stays open). Fully tested.
+- **P0-A reversals (done):** removed the incident 24h TTL auto-expiry
+  (`scheduler_watchdog.unresolved_incident_ids` blocks until an explicit
+  resolution again); rewrote `cleanup_expired_incidents.py` to *archive* resolved
+  incidents and NEVER delete unresolved/corrupt ones; removed the
+  `SHADOW_TRADING_TEST_MODE` bypass and deleted `run_sampling_recovery_mode.py`.
+  The read-only collector's `_safety_ok` no longer gates on collection incidents
+  at all — they are surfaced in status for visibility but a read-only miss never
+  bricks the next run. Order-safety invariants (READ_ONLY, no order tools, kill
+  switch, automation-halt) still gate, iron as ever.
+- **P0-B self-arming (done):** new `scripts/self_arming_worker.py` +
+  `scripts/generate_self_arming_plist.py`. One recurring launchd job, single
+  Label, `StartCalendarInterval` entries carrying only Hour+Minute (no `Day`
+  pin), so no morning re-arming. Each fire market-gates (no-ops on
+  weekends/holidays/after early close), auto-registers the whole day's
+  expectations (so the watchdog flags any miss), and delegates to the real worker
+  with `ROBINHOOD_SLOT_HHMM`. The real worker keeps its 180s freshness guard, so a
+  fire replayed after a sleep is REFUSED, never backfilled. Deleted the buggy
+  duplicate `generate_smart_plist.py` and the superseded
+  `launchd_shadow_worker_smart.py`. Fully tested.
+- Residual to note: if the Mac sleeps through *every* slot 06:10→13:05, no fire
+  registers that day's expectations, so a whole-day outage is not yet flagged.
+  Closing that (watchdog-side day registration) is folded into P1-C.
 
 ## Diagnosis (evidence-based, from two independent audits)
 
@@ -39,7 +70,7 @@ Collection simply stops blocking on collection-misses.
 
 ## Workstream (prioritized)
 
-### P0-A — Reverse the three fail-closed regressions
+### P0-A — Reverse the three fail-closed regressions  ✅ DONE
 - Revert incident 24h TTL auto-expiry (`scheduler_watchdog.py`).
 - Revert incident file auto-deletion (`cleanup_expired_incidents.py`) — never
   delete a CRITICAL incident; archive at most.
@@ -50,7 +81,7 @@ Collection simply stops blocking on collection-misses.
   logged, single-run `resolution` object (the mechanism already exists at
   `scheduler_watchdog.py` resolution.status).
 
-### P0-B — Kill daily manual re-arming (the dominant root cause)
+### P0-B — Kill daily manual re-arming (the dominant root cause)  ✅ DONE
 - One self-arming recurring launchd job (single Label), `StartInterval` phase-safe
   or a small fixed slot set, that on each fire:
   1. checks a corrected market calendar → no-ops cleanly on weekends/holidays;
@@ -61,7 +92,7 @@ Collection simply stops blocking on collection-misses.
 - Delete the conflicting second plist generator; one Label, one job, wired to the
   actually-gating worker, paths derived from `sys.executable`/repo root.
 
-### P1-A — Fix the market calendar
+### P1-A — Fix the market calendar  ✅ DONE
 - Correct Good Friday (2026-04-03, 2027-03-26) and derive holidays (compute
   Easter) rather than hardcode; add half-day early closes; anchor to the exchange
   timezone; define behavior past the table horizon (fail toward "closed+alert",
