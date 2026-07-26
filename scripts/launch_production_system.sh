@@ -64,8 +64,8 @@ echo "=================================="
 echo "PHASE 3: Starting Background Services"
 echo "=================================="
 
-# 启动采样协调系统
-log_step "Starting Sampling Coordinator..."
+# 启动采集观察器 (observe-only; 绝不回补漏采的样本)
+log_step "Starting Collection Observer (observe-only, never backfills)..."
 python3 -u scripts/robust_sampling_coordinator.py >> logs/sampling_coordinator.log 2>&1 &
 COORDINATOR_PID=$!
 echo "   PID: $COORDINATOR_PID"
@@ -127,7 +127,7 @@ echo "📋 Next Steps:"
 echo "   1. Open dashboard: http://127.0.0.1:8788 (password: trading2026)"
 echo "   2. Monitor sampling progress in real-time"
 echo "   3. Alerts will be shown if issues detected"
-echo "   4. System will auto-recover from failures"
+echo "   4. Missed samples surface as incidents — they are NEVER backfilled"
 echo ""
 
 echo "📊 Market Hours:"

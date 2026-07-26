@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 from monitoring.scheduler_health import SchedulerHealth, evaluate_start_ack
@@ -16,25 +16,22 @@ class WatchdogResult:
 
 def unresolved_incident_ids(
     incident_directory: str | Path = "logs/incidents",
-    ttl_hours: int = 24,
 ) -> tuple[str, ...]:
-    """Return incident run_ids that still block new work.
+    """Return incident run_ids that still block order-safety-relevant work.
 
-    An incident stays blocking until the owner records an explicit resolution
-    object with a non-empty status, OR until it expires (default 24 hours).
+    An incident stays blocking until the owner records an explicit, timestamped
+    ``resolution`` object with a non-empty status. There is deliberately no time
+    based auto-expiry: a safety incident does not become safe merely because it
+    is old. (Read-only collection misses are handled separately and no longer
+    route through this gate at all — see the collector's ``_safety_ok``.)
 
-    Args:
-        incident_directory: Path to incidents directory
-        ttl_hours: How many hours before incidents auto-expire (0 = no TTL)
-
-    Unreadable incident files fail closed and also block.
+    Unreadable or malformed incident files fail closed and also block.
     """
 
     directory = Path(incident_directory)
     if not directory.exists():
         return ()
 
-    cutoff_time = datetime.now(timezone.utc) - timedelta(hours=ttl_hours) if ttl_hours > 0 else None
     blocking: list[str] = []
 
     for path in sorted(directory.glob("*.scheduler-incident.json")):
@@ -47,20 +44,11 @@ def unresolved_incident_ids(
             blocking.append(path.name)
             continue
 
-        # 检查是否已明确解决
+        # Blocks until an explicit resolution object with a non-empty status.
         resolution = payload.get("resolution")
         resolved = isinstance(resolution, dict) and bool(str(resolution.get("status") or "").strip())
         if resolved:
             continue
-
-        # 检查是否超过 TTL
-        if cutoff_time:
-            try:
-                detected_at = datetime.fromisoformat(payload.get("detected_at", ""))
-                if detected_at < cutoff_time:
-                    continue  # 已过期，不阻止
-            except (ValueError, TypeError):
-                pass  # 无法解析时间，当做活跃事件处理
 
         blocking.append(str(payload.get("run_id") or path.name))
     return tuple(blocking)

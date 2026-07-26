@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from execution.official_mcp_collector import (
+    DEGRADABLE_TOOLS,
     EXPLICITLY_DISALLOWED_TOOLS,
     MCP_SERVER_NAME,
     RAW_COLLECTOR_TOOLS,
@@ -135,7 +136,7 @@ def _complete_pairs(timestamp='"2026-07-20T19:59:59.999438083Z"'):
 class HarvestStreamTests(unittest.TestCase):
     def test_complete_stream_harvests_ordered_pairs(self) -> None:
         stdout = _stream_lines(_complete_pairs(), list_content={1})
-        requests, responses, texts = _harvest_stream(stdout, PREFIX)
+        requests, responses, texts, truncated, skipped = _harvest_stream(stdout, PREFIX)
         self.assertEqual(6, len(requests))
         self.assertEqual(6, len(responses))
         self.assertEqual("get_equity_quotes", requests[0]["tool"])
@@ -143,6 +144,8 @@ class HarvestStreamTests(unittest.TestCase):
         self.assertEqual("get_earnings_results", responses[-1]["tool"])
         self.assertEqual({"earnings": []}, responses[-1]["output"])
         self.assertEqual(6, len(texts))
+        self.assertEqual((), truncated)  # strict mode: nothing degraded
+        self.assertEqual(0, skipped)  # a clean stream skips nothing
 
     def test_missing_required_tool_fails_closed(self) -> None:
         stdout = _stream_lines(_complete_pairs()[:-1])
@@ -187,9 +190,24 @@ class HarvestStreamTests(unittest.TestCase):
         with self.assertRaisesRegex(OfficialCollectorError, "no result"):
             _harvest_stream("\n".join(lines), PREFIX)
 
-    def test_non_json_stream_line_fails_closed(self) -> None:
-        stdout = "garbage line\n" + _stream_lines(_complete_pairs())
-        with self.assertRaisesRegex(OfficialCollectorError, "non-JSON line"):
+    def test_stray_non_json_stream_line_is_tolerated_and_counted(self) -> None:
+        # CLI format-drift resilience: a stray banner/warning line must NOT nuke
+        # the whole harvest. It is skipped and counted; all data still harvests.
+        stdout = "⚠ some new claude banner\n" + _stream_lines(_complete_pairs())
+        requests, responses, texts, truncated, skipped = _harvest_stream(stdout, PREFIX)
+        self.assertEqual(6, len(requests))  # every tool still harvested
+        self.assertEqual(1, skipped)  # the stray line is surfaced, not hidden
+
+    def test_all_garbage_stream_still_fails_closed(self) -> None:
+        # Tolerating stray lines must NOT let a wholly-broken stream pass: with no
+        # terminal event and no tool calls, it still fails closed.
+        with self.assertRaisesRegex(OfficialCollectorError, "terminal result"):
+            _harvest_stream("garbage 1\nnot json\n{also bad\n", PREFIX)
+
+    def test_missing_data_still_fails_closed_despite_tolerance(self) -> None:
+        # A stray line plus a genuinely missing required tool still fails closed.
+        stdout = "banner\n" + _stream_lines(_complete_pairs()[:-1])
+        with self.assertRaisesRegex(OfficialCollectorError, "get_earnings_results"):
             _harvest_stream(stdout, PREFIX)
 
 
@@ -375,6 +393,79 @@ class RawCollectorPromptTests(unittest.TestCase):
         # No account/identifier tools may be requested.
         self.assertNotIn("get_accounts", rendered)
         self.assertNotIn("get_portfolio", rendered)
+
+
+class ResilientDegradationTests(unittest.TestCase):
+    """P1-B: one overflowing tool must not zero the whole snapshot, but only in
+    opt-in resilient mode, and never for a critical tool."""
+
+    def _pairs_with_bad(self, tool: str):
+        # Replace one tool's output with truncated/invalid JSON (an overflow spill).
+        truncated = '{"quotes":[{"bid":"1.10"'  # no closing braces
+        return [
+            (name, tool_input, (truncated if name == tool else output))
+            for name, tool_input, output in _complete_pairs()
+        ]
+
+    def test_degradable_set_is_the_large_optional_tools(self) -> None:
+        self.assertEqual(
+            {"get_equity_historicals", "get_option_instruments", "get_option_quotes"},
+            set(DEGRADABLE_TOOLS),
+        )
+        # Critical small tools must NOT be degradable.
+        for critical in ("get_equity_quotes", "get_option_chains", "get_earnings_results"):
+            self.assertNotIn(critical, DEGRADABLE_TOOLS)
+
+    def test_strict_mode_fails_closed_on_truncated_degradable_tool(self) -> None:
+        stdout = _stream_lines(self._pairs_with_bad("get_option_quotes"))
+        with self.assertRaisesRegex(OfficialCollectorError, "get_option_quotes"):
+            _harvest_stream(stdout, PREFIX)  # strict (default)
+
+    def test_resilient_degrades_truncated_degradable_tool(self) -> None:
+        stdout = _stream_lines(self._pairs_with_bad("get_option_quotes"))
+        requests, responses, texts, truncated, _skipped = _harvest_stream(stdout, PREFIX, resilient=True)
+        self.assertEqual(("get_option_quotes",), truncated)
+        degraded = next(r for r in responses if r["tool"] == "get_option_quotes")
+        self.assertIsNone(degraded["output"])  # no truncated bytes stored
+        self.assertTrue(degraded["truncated"])
+        # Other tools survive intact.
+        chain = next(r for r in responses if r["tool"] == "get_option_chains")
+        self.assertEqual({"chain": {"id": "abc"}}, chain["output"])
+        # Completeness still satisfied: every required tool was called.
+        self.assertEqual(len(RAW_REQUIRED_TOOLS), len({r["tool"] for r in requests}))
+        # The degraded tool's garbage text is not in response_texts.
+        self.assertTrue(all("get_option_quotes" not in t or "1.10" not in t for t in texts))
+
+    def test_resilient_still_fails_closed_on_truncated_critical_tool(self) -> None:
+        # get_equity_quotes is critical (not degradable) and carries the timestamp.
+        stdout = _stream_lines(self._pairs_with_bad("get_equity_quotes"))
+        with self.assertRaisesRegex(OfficialCollectorError, "get_equity_quotes"):
+            _harvest_stream(stdout, PREFIX, resilient=True)
+
+    @patch("execution.official_mcp_collector.subprocess.run")
+    @patch("execution.official_mcp_collector.claude_binary", return_value="/usr/bin/true")
+    def test_collect_marks_partial_in_vault_envelope(self, _binary, mock_run) -> None:
+        stdout = _stream_lines(self._pairs_with_bad("get_option_quotes"))
+        mock_run.return_value = _fake_result(0, stdout=stdout)
+        with tempfile.TemporaryDirectory() as vault:
+            receipt = collect_official_raw_snapshot(
+                "SPY", project_root=".", vault_root=Path(vault), resilient=True
+            )
+            envelope = json.loads(Path(receipt.path).read_text(encoding="utf-8"))
+            self.assertTrue(envelope["request"]["partial"])
+            self.assertEqual(["get_option_quotes"], envelope["request"]["truncated_tools"])
+
+    @patch("execution.official_mcp_collector.subprocess.run")
+    @patch("execution.official_mcp_collector.claude_binary", return_value="/usr/bin/true")
+    def test_complete_snapshot_is_not_partial(self, _binary, mock_run) -> None:
+        mock_run.return_value = _fake_result(0, stdout=_stream_lines(_complete_pairs()))
+        with tempfile.TemporaryDirectory() as vault:
+            receipt = collect_official_raw_snapshot(
+                "SPY", project_root=".", vault_root=Path(vault), resilient=True
+            )
+            envelope = json.loads(Path(receipt.path).read_text(encoding="utf-8"))
+            self.assertFalse(envelope["request"]["partial"])
+            self.assertNotIn("truncated_tools", envelope["request"])
 
 
 if __name__ == "__main__":

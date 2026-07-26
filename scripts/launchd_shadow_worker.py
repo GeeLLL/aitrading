@@ -57,7 +57,30 @@ def _atomic_json(path: Path, payload: dict[str, object]) -> None:
     temporary.replace(path)
 
 
-def _resolve_slot(now: datetime) -> tuple[datetime, str, str]:
+def _resolve_slot(now: datetime, slot_hhmm: str | None = None) -> tuple[datetime, str, str]:
+    """Resolve the slot this fire belongs to, enforcing a 180s freshness guard.
+
+    The freshness guard is the backfill firewall: a fire that lands more than
+    180 seconds from any registered slot (e.g. launchd replaying a missed
+    StartCalendarInterval hours after the Mac wakes) is REFUSED, so a stale
+    market sample is never collected after the fact.
+
+    ``slot_hhmm`` is an optional "HHMM" hint set by the self-arming wrapper to
+    name the exact slot it fired for. It only disambiguates *which* slot; the
+    same 180s freshness guard still applies, so the hint can never be used to
+    backfill.
+    """
+    if slot_hhmm:
+        try:
+            hour, minute = int(slot_hhmm[:2]), int(slot_hhmm[2:])
+            kind, symbol = SLOTS[(hour, minute)]
+        except (ValueError, KeyError, IndexError):
+            raise ValueError(f"UNKNOWN_SLOT_HHMM:{slot_hhmm}")
+        scheduled = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if abs((now - scheduled).total_seconds()) > 180:
+            raise ValueError("SLOT_FIRED_OUTSIDE_180_SECONDS")
+        return scheduled, kind, symbol
+
     candidates = []
     for (hour, minute), (kind, symbol) in SLOTS.items():
         scheduled = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
@@ -72,26 +95,31 @@ def _run_id(scheduled: datetime, kind: str) -> str:
     return run_id_for(kind, scheduled)
 
 
-def _safety_ok() -> tuple[bool, dict[str, object]]:
+def _safety_ok(incident_directory: Path = ROOT / "logs/incidents") -> tuple[bool, dict[str, object]]:
+    """Order-safety gate for the read-only collector.
+
+    Read-only collection is gated ONLY on order-safety invariants and the
+    explicit automation-halt kill switch. Scheduler incidents are a reliability
+    signal, not a safety signal: re-collecting read-only market data is harmless,
+    so a collection miss must never brick the next run. We still surface any
+    unresolved incidents in ``status`` for visibility and alerting, but they do
+    not gate the collector. (Order-safety fail-closed lives in the risk / order
+    path, which never runs during read-only collection. There is no environment
+    variable bypass — the invariants below are non-negotiable.)
+    """
     status = build_status()
     halted = AutomationHalt(ROOT / "state/automation_halt.json").active()
-    incidents = unresolved_incident_ids(ROOT / "logs/incidents")
     status["automation_halted"] = halted
-    status["unresolved_scheduler_incidents"] = list(incidents)
+    status["unresolved_scheduler_incidents"] = list(
+        unresolved_incident_ids(incident_directory)
+    )
 
-    # 测试模式：允许忽略历史事件（用于开发/测试环境）
-    test_mode = os.environ.get("SHADOW_TRADING_TEST_MODE") == "1"
-    status["test_mode_enabled"] = test_mode
-
-    # 正常模式下，事件会阻止采样
-    # 测试模式下，允许继续运行（用于故障恢复）
     valid = (
         status["system_mode"] == "READ_ONLY"
         and status["live_trading_enabled"] is False
         and status["order_tools_enabled"] is False
         and status["kill_switch_engaged"] is True
         and not halted
-        and (not incidents or test_mode)
     )
     return valid, status
 
@@ -101,7 +129,10 @@ def _run_canary(run_id: str, symbol: str, ack_path: Path, log_root: Path) -> int
     summary_path = log_root / f"{run_id}.json"
     started = datetime.now(timezone.utc)
     try:
-        receipt = collect_official_raw_snapshot(symbol, project_root=ROOT)
+        # Read-only canary: degrade gracefully if one large tool overflows the
+        # harness cap, so a single bad tool never zeroes the snapshot. Any partial
+        # result is marked in the vault envelope and stays excluded from evidence.
+        receipt = collect_official_raw_snapshot(symbol, project_root=ROOT, resilient=True)
         verified = RawDataVault.verify(receipt.path, receipt.content_sha256)
         result_status = "COMPLETED"
         failure_reason = None
@@ -147,7 +178,7 @@ def main() -> int:
         kind, symbol = "CANARY", "SPY"
     else:
         try:
-            scheduled, kind, symbol = _resolve_slot(now)
+            scheduled, kind, symbol = _resolve_slot(now, os.environ.get("ROBINHOOD_SLOT_HHMM"))
         except ValueError as error:
             _atomic_json(log_root / f"unscheduled-{now:%H%M%S}.json", {
                 "status": "REFUSED",

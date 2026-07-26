@@ -47,6 +47,25 @@ class LaunchdShadowWorkerTests(unittest.TestCase):
             )
         )
 
+    def test_slot_hint_resolves_exact_slot(self):
+        # The self-arming wrapper passes ROBINHOOD_SLOT_HHMM to name the slot.
+        now = datetime(2026, 7, 21, 7, 3, 5, tzinfo=LOCAL)
+        scheduled, kind, symbol = _resolve_slot(now, "0703")
+        self.assertEqual((kind, symbol), ("PILOT_SAMPLE", "SPY"))
+        self.assertEqual(_run_id(scheduled, kind), "pilot-20260721-0703")
+
+    def test_slot_hint_still_enforces_freshness_guard(self):
+        # A slot hint can disambiguate but can NEVER backfill: a fire that lands
+        # far from the named slot (e.g. launchd replaying after a wake) is refused.
+        stale = datetime(2026, 7, 21, 9, 3, 0, tzinfo=LOCAL)
+        with self.assertRaisesRegex(ValueError, "SLOT_FIRED_OUTSIDE_180_SECONDS"):
+            _resolve_slot(stale, "0703")
+
+    def test_unknown_slot_hint_is_rejected(self):
+        now = datetime(2026, 7, 21, 7, 4, 0, tzinfo=LOCAL)
+        with self.assertRaisesRegex(ValueError, "UNKNOWN_SLOT_HHMM"):
+            _resolve_slot(now, "0704")
+
 
 class DailyScheduleTests(unittest.TestCase):
     def test_full_day_expectation_table(self):

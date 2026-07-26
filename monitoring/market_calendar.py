@@ -1,97 +1,151 @@
-"""
-Market calendar utilities.
+"""US equities market calendar, derived (not hardcoded) so it is correct for any year.
 
-Determines if a given date is a market-open day (US equities).
-Accounts for weekends and major US holidays.
+Holidays are computed from the NYSE/Nasdaq rules (fixed dates with Saturday->Friday
+/ Sunday->Monday observance, plus rule-based Mondays/Thursdays and a computed Good
+Friday). This replaces an earlier hardcoded table that had the wrong Good Friday
+dates and no coverage past 2027. "Today" is anchored to the exchange timezone
+(America/New_York), not the host's local date.
 """
+
+from __future__ import annotations
 
 from datetime import date, datetime, timedelta
-from typing import Optional
 from zoneinfo import ZoneInfo
 
 SESSION_TIMEZONE = ZoneInfo("America/Los_Angeles")
+EXCHANGE_TIMEZONE = ZoneInfo("America/New_York")
 
-# US market holidays (2026)
-# Source: https://www.nasdaq.com/market-activity/holidays-and-hours
-US_MARKET_HOLIDAYS_2026 = {
-    date(2026, 1, 1),   # New Year's Day
-    date(2026, 1, 19),  # MLK Jr. Day
-    date(2026, 2, 16),  # Presidents' Day
-    date(2026, 3, 27),  # Good Friday
-    date(2026, 5, 25),  # Memorial Day
-    date(2026, 6, 19),  # Juneteenth
-    date(2026, 7, 3),   # Independence Day (observed, Friday)
-    date(2026, 9, 7),   # Labor Day
-    date(2026, 11, 26), # Thanksgiving
-    date(2026, 12, 25), # Christmas
-}
-
-# Extended through 2027 for planning
-US_MARKET_HOLIDAYS_2027 = {
-    date(2027, 1, 1),   # New Year's Day
-    date(2027, 1, 18),  # MLK Jr. Day
-    date(2027, 2, 15),  # Presidents' Day
-    date(2027, 4, 9),   # Good Friday
-    date(2027, 5, 31),  # Memorial Day
-    date(2027, 6, 18),  # Juneteenth
-    date(2027, 7, 5),   # Independence Day (observed, Monday)
-    date(2027, 9, 6),   # Labor Day
-    date(2027, 11, 25), # Thanksgiving
-    date(2027, 12, 25), # Christmas
-}
-
-ALL_MARKET_HOLIDAYS = US_MARKET_HOLIDAYS_2026 | US_MARKET_HOLIDAYS_2027
+MON, TUE, WED, THU, FRI, SAT, SUN = range(7)
 
 
-def is_market_open_today() -> bool:
-    """Check if today (in PT) is a market-open day."""
-    return is_market_open(date.today())
+def _nth_weekday(year: int, month: int, weekday: int, n: int) -> date:
+    """The n-th (1-based) `weekday` of the month."""
+    d = date(year, month, 1)
+    offset = (weekday - d.weekday()) % 7
+    return d + timedelta(days=offset + 7 * (n - 1))
+
+
+def _last_weekday(year: int, month: int, weekday: int) -> date:
+    """The last `weekday` of the month."""
+    if month == 12:
+        nxt = date(year + 1, 1, 1)
+    else:
+        nxt = date(year, month + 1, 1)
+    d = nxt - timedelta(days=1)
+    return d - timedelta(days=(d.weekday() - weekday) % 7)
+
+
+def _observed(d: date) -> date:
+    """NYSE observance: Saturday holiday -> preceding Friday; Sunday -> following Monday."""
+    if d.weekday() == SAT:
+        return d - timedelta(days=1)
+    if d.weekday() == SUN:
+        return d + timedelta(days=1)
+    return d
+
+
+def easter_sunday(year: int) -> date:
+    """Gregorian Easter (Anonymous algorithm)."""
+    a = year % 19
+    b = year // 100
+    c = year % 100
+    d = b // 4
+    e = b % 4
+    f = (b + 8) // 25
+    g = (b - f + 1) // 3
+    h = (19 * a + b - d - g + 15) % 30
+    i = c // 4
+    k = c % 4
+    l = (32 + 2 * e + 2 * i - h - k) % 7
+    m = (a + 11 * h + 22 * l) // 451
+    month = (h + l - 7 * m + 114) // 31
+    day = ((h + l - 7 * m + 114) % 31) + 1
+    return date(year, month, day)
+
+
+def good_friday(year: int) -> date:
+    return easter_sunday(year) - timedelta(days=2)
+
+
+def market_holidays(year: int) -> set[date]:
+    """Full-day US equity market closures for the given year, computed from rules."""
+    holidays = {
+        _nth_weekday(year, 1, MON, 3),         # MLK Jr. Day (3rd Mon Jan)
+        _nth_weekday(year, 2, MON, 3),         # Presidents' Day (3rd Mon Feb)
+        good_friday(year),                     # Good Friday (computed)
+        _last_weekday(year, 5, MON),           # Memorial Day (last Mon May)
+        _observed(date(year, 6, 19)),          # Juneteenth
+        _observed(date(year, 7, 4)),           # Independence Day
+        _nth_weekday(year, 9, MON, 1),         # Labor Day (1st Mon Sep)
+        _nth_weekday(year, 11, THU, 4),        # Thanksgiving (4th Thu Nov)
+        _observed(date(year, 12, 25)),         # Christmas
+    }
+    # New Year's Day has a documented NYSE exception: a Sunday Jan 1 is observed
+    # the following Monday, but a Saturday Jan 1 is NOT observed on the preceding
+    # Friday (Dec 31 stays a trading day), unlike every other holiday.
+    new_year = date(year, 1, 1)
+    if new_year.weekday() == SUN:
+        holidays.add(date(year, 1, 2))
+    elif new_year.weekday() != SAT:
+        holidays.add(new_year)
+    return holidays
 
 
 def is_market_open(target_date: date) -> bool:
-    """
-    Check if a given date is a market-open day.
-
-    Market is open Monday-Friday, excluding US holidays.
-    """
-    # Check if it's a weekend
-    if target_date.weekday() >= 5:  # Saturday=5, Sunday=6
+    """True if `target_date` is a regular US equities trading day."""
+    if target_date.weekday() >= SAT:
         return False
-
-    # Check if it's a known holiday
-    if target_date in ALL_MARKET_HOLIDAYS:
+    if target_date in market_holidays(target_date.year):
         return False
-
     return True
 
 
-def next_market_open_date(from_date: Optional[date] = None) -> date:
-    """Find the next market-open date from a given date (default: today)."""
-    if from_date is None:
-        from_date = date.today()
+def is_early_close(target_date: date) -> bool:
+    """True on the standard NYSE half-days (1pm ET early close)."""
+    if not is_market_open(target_date):
+        return False
+    year = target_date.year
+    thanksgiving = _nth_weekday(year, 11, THU, 4)
+    day_after_thanksgiving = thanksgiving + timedelta(days=1)
+    if target_date == day_after_thanksgiving:
+        return True
+    # Christmas Eve, when it is itself a trading day.
+    if target_date == date(year, 12, 24) and target_date.weekday() < SAT:
+        return True
+    # July 3, when it is a trading day preceding a July 4 close.
+    if target_date == date(year, 7, 3) and target_date.weekday() < SAT:
+        return True
+    return False
 
-    current = from_date + timedelta(days=1)
+
+def market_date_now(now: datetime | None = None) -> date:
+    """The current exchange (New York) calendar date."""
+    if now is None:
+        now = datetime.now(EXCHANGE_TIMEZONE)
+    return now.astimezone(EXCHANGE_TIMEZONE).date()
+
+
+def is_market_open_today(now: datetime | None = None) -> bool:
+    """True if the current exchange date is a trading day (timezone-anchored)."""
+    return is_market_open(market_date_now(now))
+
+
+def next_market_open_date(from_date: date | None = None) -> date:
+    current = (from_date or market_date_now()) + timedelta(days=1)
     while not is_market_open(current):
         current += timedelta(days=1)
-
     return current
 
 
-def previous_market_open_date(from_date: Optional[date] = None) -> date:
-    """Find the previous market-open date from a given date (default: today)."""
-    if from_date is None:
-        from_date = date.today()
-
-    current = from_date - timedelta(days=1)
+def previous_market_open_date(from_date: date | None = None) -> date:
+    current = (from_date or market_date_now()) - timedelta(days=1)
     while not is_market_open(current):
         current -= timedelta(days=1)
-
     return current
 
 
 if __name__ == "__main__":
-    # Quick test
-    today = date.today()
-    print(f"Today ({today}): {'Market OPEN' if is_market_open_today() else 'Market CLOSED'}")
-    print(f"Next market open: {next_market_open_date()}")
-    print(f"Previous market open: {previous_market_open_date()}")
+    today = market_date_now()
+    print(f"Exchange date {today}: {'OPEN' if is_market_open(today) else 'CLOSED'}"
+          f"{' (early close)' if is_early_close(today) else ''}")
+    print(f"Good Friday {today.year}: {good_friday(today.year)}")
