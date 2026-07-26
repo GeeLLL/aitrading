@@ -45,6 +45,16 @@ def _ack(root: Path, run_id: str, scheduled: datetime) -> None:
     )
 
 
+def _summary(root: Path, run_id: str, scheduled: datetime, status: str) -> None:
+    local_date = scheduled.astimezone(PT).date().isoformat()
+    directory = root / "logs/launchd_worker" / local_date
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / f"{run_id}.json").write_text(
+        json.dumps({"schema_version": 1, "status": status, "run_id": run_id}),
+        encoding="utf-8",
+    )
+
+
 class ObserveCollectionTests(unittest.TestCase):
     def test_closed_day_reports_market_closed_no_slots(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -100,6 +110,47 @@ class ObserveCollectionTests(unittest.TestCase):
             status = observe_collection(end_of_day, **_dirs(root))
             self.assertIn("some-run", status.unresolved_incidents)
             self.assertFalse(status.healthy)
+
+    def test_started_but_failed_collection_is_degraded_not_healthy(self) -> None:
+        # The dead-OAuth / dead-CLI case: every slot writes a start-ack but its
+        # collection fails. Acks alone must NOT read as healthy.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            end_of_day = datetime(2026, 7, 22, 14, 0, tzinfo=PT)
+            for run_id, scheduled in expected_runs_for_date(end_of_day.date()):
+                _ack(root, run_id, scheduled)
+                _summary(root, run_id, scheduled, "FAILED_CLOSED")
+            status = observe_collection(end_of_day, **_dirs(root))
+            self.assertEqual(0, len(status.ran))
+            self.assertEqual(len(status.slots), len(status.failed))
+            self.assertEqual(0, len(status.missed))
+            self.assertFalse(status.healthy)  # visibly degraded, not silently green
+            self.assertIn("FAILED", render_report(status))
+
+    def test_completed_summary_counts_as_ran(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            end_of_day = datetime(2026, 7, 22, 14, 0, tzinfo=PT)
+            for run_id, scheduled in expected_runs_for_date(end_of_day.date()):
+                _ack(root, run_id, scheduled)
+                _summary(root, run_id, scheduled, "COMPLETED")
+            status = observe_collection(end_of_day, **_dirs(root))
+            self.assertEqual(len(status.slots), len(status.ran))
+            self.assertEqual(0, len(status.failed))
+            self.assertTrue(status.healthy)
+
+    def test_started_without_summary_yet_is_ran_not_failed(self) -> None:
+        # A slot that acked but has not written its summary yet (still running)
+        # must not be prematurely marked failed.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            now = datetime(2026, 7, 22, 7, 10, tzinfo=PT)
+            for run_id, scheduled in expected_runs_for_date(now.date()):
+                if scheduled.hour == 6 and scheduled.minute == 10:
+                    _ack(root, run_id, scheduled)  # ack only, no summary
+            status = observe_collection(now, **_dirs(root))
+            self.assertEqual(1, len(status.ran))
+            self.assertEqual(0, len(status.failed))
 
     def test_observer_writes_nothing(self) -> None:
         # Pure: observing must not create the expectation directory or any file.

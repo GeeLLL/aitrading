@@ -72,6 +72,17 @@ class PlanFireTests(unittest.TestCase):
         decision = plan_fire(datetime(2026, 11, 27, 9, 3, tzinfo=PT))
         self.assertTrue(decision.run)
 
+    def test_market_gate_uses_session_date_not_exchange_date(self) -> None:
+        # Late Friday evening PT is already Saturday in New York. The gate must
+        # use the session (PT) date the slots and registration use, so a Friday
+        # 23:30 PT fire is a market day (just no slot), NOT wrongly NON_MARKET_DAY.
+        friday_late = datetime(2026, 7, 24, 23, 30, tzinfo=PT)  # Fri in PT, Sat in NY
+        decision = plan_fire(friday_late)
+        self.assertFalse(decision.run)
+        self.assertEqual("NO_SLOT_WINDOW", decision.reason)  # not NON_MARKET_DAY
+        # And a genuine PT-date holiday is still correctly closed.
+        self.assertEqual("NON_MARKET_DAY", plan_fire(datetime(2026, 4, 3, 7, 3, tzinfo=PT)).reason)
+
 
 class RegisterExpectationsTests(unittest.TestCase):
     def test_registers_full_day_and_is_idempotent(self) -> None:

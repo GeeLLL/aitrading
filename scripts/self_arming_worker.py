@@ -44,7 +44,7 @@ from monitoring.daily_schedule import DAILY_SLOTS, SESSION_TIMEZONE, expected_ru
 from monitoring.market_calendar import (
     EXCHANGE_TIMEZONE,
     is_early_close,
-    is_market_open_today,
+    is_market_open,
 )
 from monitoring.scheduler_watchdog import register_expected_run
 
@@ -84,10 +84,13 @@ def _early_close_local_cutoff() -> time:
 
 def plan_fire(now: datetime) -> FireDecision:
     """Decide, purely, what this fire should do. ``now`` must be tz-aware."""
-    if not is_market_open_today(now):
-        return FireDecision(run=False, reason="NON_MARKET_DAY")
-
+    # Anchor everything to the session (PT) date the slots are defined in and the
+    # worker/observer register under, so the market gate, the early-close cutoff,
+    # and expectation registration can never disagree about which day it is.
     local = now.astimezone(SESSION_TIMEZONE)
+
+    if not is_market_open(local.date()):
+        return FireDecision(run=False, reason="NON_MARKET_DAY")
 
     # On an early-close day, do not run (or register) slots at/after the close.
     if is_early_close(local.date()) and local.time() >= _early_close_local_cutoff():

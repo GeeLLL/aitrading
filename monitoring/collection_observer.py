@@ -39,12 +39,20 @@ DEFAULT_WORKER_DIR = "logs/launchd_worker"
 # watchdog's start-ack grace window).
 GRACE_SECONDS = 120
 
+# Worker-summary statuses that mean the slot started (wrote an ack) but its
+# collection did NOT succeed. This is how a systemic outage that still "starts"
+# every slot — a dead MCP OAuth, a missing/expired Claude CLI, a network drop —
+# shows up as DEGRADED instead of a day that looks fully healthy because 17 acks
+# exist. "COMPLETED" and the benign "OVERLAP_SKIPPED" are the only non-failures;
+# an unknown status is treated as a failure (fail toward visible).
+_SUCCESS_STATUSES = frozenset({"COMPLETED", "OVERLAP_SKIPPED"})
+
 
 @dataclass(frozen=True)
 class SlotObservation:
     run_id: str
     scheduled_for: datetime
-    state: str  # PENDING | RAN | MISSED
+    state: str  # PENDING | RAN | RAN_FAILED | MISSED
     summary_status: str | None = None
 
 
@@ -61,7 +69,13 @@ class CollectionStatus:
 
     @property
     def ran(self) -> tuple[SlotObservation, ...]:
+        """Slots that started and did not report a collection failure."""
         return tuple(slot for slot in self.slots if slot.state == "RAN")
+
+    @property
+    def failed(self) -> tuple[SlotObservation, ...]:
+        """Slots that started (wrote an ack) but whose collection failed."""
+        return tuple(slot for slot in self.slots if slot.state == "RAN_FAILED")
 
     @property
     def pending(self) -> tuple[SlotObservation, ...]:
@@ -69,7 +83,7 @@ class CollectionStatus:
 
     @property
     def healthy(self) -> bool:
-        return not self.missed and not self.unresolved_incidents
+        return not self.missed and not self.failed and not self.unresolved_incidents
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -79,6 +93,7 @@ class CollectionStatus:
             "counts": {
                 "expected": len(self.slots),
                 "ran": len(self.ran),
+                "failed": len(self.failed),
                 "missed": len(self.missed),
                 "pending": len(self.pending),
                 "unresolved_incidents": len(self.unresolved_incidents),
@@ -86,6 +101,10 @@ class CollectionStatus:
             "missed": [
                 {"run_id": slot.run_id, "scheduled_for": slot.scheduled_for.isoformat()}
                 for slot in self.missed
+            ],
+            "failed": [
+                {"run_id": slot.run_id, "status": slot.summary_status}
+                for slot in self.failed
             ],
             "unresolved_incidents": list(self.unresolved_incidents),
             "policy": "OBSERVE_ONLY_NEVER_BACKFILL",
@@ -134,8 +153,16 @@ def observe_collection(
     slots: list[SlotObservation] = []
     for run_id, scheduled_for in expected_runs_for_date(today):
         ran = _ack_exists(run_id, ack_dir)
+        summary_status = _summary_status(run_id, scheduled_for, worker_dir) if ran else None
         if ran:
-            state = "RAN"
+            # Started, but did the collection actually succeed? A finished summary
+            # with a non-success status (dead OAuth, missing CLI, timeout, ...) is
+            # a visible failure, not a healthy run. A still-running slot has no
+            # summary yet (None) and counts as RAN until its summary lands.
+            if summary_status is not None and summary_status not in _SUCCESS_STATUSES:
+                state = "RAN_FAILED"
+            else:
+                state = "RAN"
         elif now > scheduled_for + timedelta(seconds=GRACE_SECONDS):
             # Past the slot's grace window with no start-ack -> a real miss.
             state = "MISSED"
@@ -146,7 +173,7 @@ def observe_collection(
             run_id=run_id,
             scheduled_for=scheduled_for,
             state=state,
-            summary_status=_summary_status(run_id, scheduled_for, worker_dir) if ran else None,
+            summary_status=summary_status,
         ))
     return CollectionStatus(
         market_open=True,
@@ -193,9 +220,11 @@ def render_report(status: CollectionStatus) -> str:
     lines = [
         f"[{status.as_of:%Y-%m-%d %H:%M}] {'HEALTHY' if status.healthy else 'DEGRADED'} "
         f"ran={counts['ran']}/{counts['expected']} "
-        f"missed={counts['missed']} pending={counts['pending']} "
+        f"failed={counts['failed']} missed={counts['missed']} pending={counts['pending']} "
         f"incidents={counts['unresolved_incidents']}",
     ]
+    for slot in status.failed:
+        lines.append(f"  FAILED {slot.run_id} ({slot.summary_status})")
     for slot in status.missed:
         lines.append(f"  MISSED {slot.run_id} (scheduled {slot.scheduled_for:%H:%M})")
     return "\n".join(lines)
