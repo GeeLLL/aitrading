@@ -4,6 +4,27 @@ Status: COMPLETE. P0-A, P0-B, P1-A, P1-B, P1-C, and P2 are all DONE. Goal met:
 the read-only collector runs every market day with zero manual intervention and
 zero silent misses, while the order-safety fail-closed guarantees stay iron.
 
+## Post-review hardening (senior-engineer review follow-ups)
+
+- **Safe log rotation:** `rotate_logs.sh` rewritten to prune the raw vault,
+  scheduler, and incidents trees entirely and only rotate plain `*.log` /
+  `*.stdout/stderr` files (the old version would have gzipped the immutable
+  vault, gzipped live expectation files, and deleted incidents).
+- **Failure-visible observer:** `collection_observer` distinguishes RAN_OK from
+  RAN_FAILED, so a systemic outage that still writes a start-ack for every slot
+  (dead MCP OAuth, missing CLI, timeouts) reads as DEGRADED, not falsely healthy.
+- **Date consistency:** the self-arming market gate uses the session (PT) date,
+  the same basis as registration and the observer.
+- **CLI format-drift tolerance:** the stream-json harvester now skips-and-counts
+  stray non-JSON lines (a new CLI banner no longer nukes the whole collection),
+  while every integrity check still fails closed on genuinely missing data; the
+  skipped-line count is stamped into the vault envelope as an early drift signal.
+- **Deferred (needs the Mac + owner):** replacing the `claude` CLI transport with
+  a direct Python MCP client to remove the LLM from the data path. Correct but
+  cannot be OAuth-authorized or verified against the live brokerage from the
+  cloud sandbox; to be done build-alongside on the Mac, keeping the CLI collector
+  as fallback until an A/B comparison passes.
+
 ## Second pass (P1-B, P1-C, P2)
 
 - **P1-B truncation-overflow (done):** the raw collector now has an opt-in

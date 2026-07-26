@@ -268,25 +268,36 @@ def _harvest_stream(
     In ``resilient`` mode, a truncated/overflowed/errored result for a tool in
     ``DEGRADABLE_TOOLS`` is recorded as a marked-absent output (``output: None``,
     ``truncated: True``) instead of failing the whole snapshot closed; the tool
-    name is returned in the fourth element so the caller can mark the snapshot
-    partial. No truncated bytes are ever stored. Non-degradable tools and strict
-    mode still fail closed on any irregularity. Returns
-    ``(requests, responses, response_texts, truncated_tools)``.
+    name is returned so the caller can mark the snapshot partial. No truncated
+    bytes are ever stored. Non-degradable tools and strict mode still fail closed
+    on any irregularity.
+
+    CLI format-drift tolerance: a stray line that is not a JSON object (for
+    example a new banner or warning a future Claude CLI prints to stdout) is
+    SKIPPED and counted, not treated as fatal — we only ever act on recognized
+    JSON events, and anything genuinely missing as a result (a tool with no
+    result, a missing terminal event) still fails closed below. The skipped-line
+    count is returned so drift is visible in the stored envelope before it grows
+    into a hard break. Returns
+    ``(requests, responses, response_texts, truncated_tools, skipped_lines)``.
     """
 
     tool_calls: list[dict] = []          # ordered {id, tool, input}
     results_by_id: dict[str, object] = {}
     response_texts: list[str] = []
     terminal: dict | None = None
+    skipped_lines = 0
     for line in stdout.splitlines():
         if not line.strip():
             continue
         try:
             event = json.loads(line)
-        except json.JSONDecodeError as error:
-            raise OfficialCollectorError("Claude stream output contained a non-JSON line.") from error
+        except json.JSONDecodeError:
+            skipped_lines += 1
+            continue
         if not isinstance(event, dict):
-            raise OfficialCollectorError("Claude stream line is not an object.")
+            skipped_lines += 1
+            continue
         kind = event.get("type")
         if kind == "assistant":
             content = (event.get("message") or {}).get("content") or []
@@ -314,7 +325,10 @@ def _harvest_stream(
         elif kind == "result":
             terminal = event
     if terminal is None:
-        raise OfficialCollectorError("Claude stream ended without a terminal result event.")
+        raise OfficialCollectorError(
+            "Claude stream ended without a terminal result event "
+            "(the Claude CLI stream-json format may have changed)."
+        )
     if terminal.get("subtype") != "success" or terminal.get("is_error") is not False:
         raise OfficialCollectorError("Claude runner reported an unsuccessful terminal result.")
     if not tool_calls:
@@ -364,7 +378,7 @@ def _harvest_stream(
         raise OfficialCollectorError(
             "Harvested snapshot is incomplete; missing tools: " + ",".join(sorted(missing))
         )
-    return requests, responses, response_texts, tuple(truncated_tools)
+    return requests, responses, response_texts, tuple(truncated_tools), skipped_lines
 
 
 def _aware_datetime(value: object) -> datetime:
@@ -424,7 +438,7 @@ def collect_official_raw_snapshot(
             f"{_safe_failure_detail(getattr(completed, 'stderr', None))}"
         )
     expected_prefix = f"mcp__{MCP_SERVER_NAME}__"
-    requests, responses, response_texts, truncated_tools = _harvest_stream(
+    requests, responses, response_texts, truncated_tools, skipped_lines = _harvest_stream(
         completed.stdout, expected_prefix, resilient=resilient
     )
     received_at = datetime.now(timezone.utc)
@@ -437,6 +451,10 @@ def collect_official_raw_snapshot(
     }
     if truncated_tools:
         request_envelope["truncated_tools"] = list(truncated_tools)
+    if skipped_lines:
+        # Surface (don't hide) any non-JSON stream lines — an early signal that
+        # the Claude CLI stream-json format is drifting.
+        request_envelope["stream_skipped_lines"] = skipped_lines
     return RawDataVault(root / vault_root).store(
         source="ROBINHOOD_OFFICIAL_MCP",
         request=request_envelope,

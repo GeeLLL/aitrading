@@ -136,7 +136,7 @@ def _complete_pairs(timestamp='"2026-07-20T19:59:59.999438083Z"'):
 class HarvestStreamTests(unittest.TestCase):
     def test_complete_stream_harvests_ordered_pairs(self) -> None:
         stdout = _stream_lines(_complete_pairs(), list_content={1})
-        requests, responses, texts, truncated = _harvest_stream(stdout, PREFIX)
+        requests, responses, texts, truncated, skipped = _harvest_stream(stdout, PREFIX)
         self.assertEqual(6, len(requests))
         self.assertEqual(6, len(responses))
         self.assertEqual("get_equity_quotes", requests[0]["tool"])
@@ -145,6 +145,7 @@ class HarvestStreamTests(unittest.TestCase):
         self.assertEqual({"earnings": []}, responses[-1]["output"])
         self.assertEqual(6, len(texts))
         self.assertEqual((), truncated)  # strict mode: nothing degraded
+        self.assertEqual(0, skipped)  # a clean stream skips nothing
 
     def test_missing_required_tool_fails_closed(self) -> None:
         stdout = _stream_lines(_complete_pairs()[:-1])
@@ -189,9 +190,24 @@ class HarvestStreamTests(unittest.TestCase):
         with self.assertRaisesRegex(OfficialCollectorError, "no result"):
             _harvest_stream("\n".join(lines), PREFIX)
 
-    def test_non_json_stream_line_fails_closed(self) -> None:
-        stdout = "garbage line\n" + _stream_lines(_complete_pairs())
-        with self.assertRaisesRegex(OfficialCollectorError, "non-JSON line"):
+    def test_stray_non_json_stream_line_is_tolerated_and_counted(self) -> None:
+        # CLI format-drift resilience: a stray banner/warning line must NOT nuke
+        # the whole harvest. It is skipped and counted; all data still harvests.
+        stdout = "⚠ some new claude banner\n" + _stream_lines(_complete_pairs())
+        requests, responses, texts, truncated, skipped = _harvest_stream(stdout, PREFIX)
+        self.assertEqual(6, len(requests))  # every tool still harvested
+        self.assertEqual(1, skipped)  # the stray line is surfaced, not hidden
+
+    def test_all_garbage_stream_still_fails_closed(self) -> None:
+        # Tolerating stray lines must NOT let a wholly-broken stream pass: with no
+        # terminal event and no tool calls, it still fails closed.
+        with self.assertRaisesRegex(OfficialCollectorError, "terminal result"):
+            _harvest_stream("garbage 1\nnot json\n{also bad\n", PREFIX)
+
+    def test_missing_data_still_fails_closed_despite_tolerance(self) -> None:
+        # A stray line plus a genuinely missing required tool still fails closed.
+        stdout = "banner\n" + _stream_lines(_complete_pairs()[:-1])
+        with self.assertRaisesRegex(OfficialCollectorError, "get_earnings_results"):
             _harvest_stream(stdout, PREFIX)
 
 
@@ -407,7 +423,7 @@ class ResilientDegradationTests(unittest.TestCase):
 
     def test_resilient_degrades_truncated_degradable_tool(self) -> None:
         stdout = _stream_lines(self._pairs_with_bad("get_option_quotes"))
-        requests, responses, texts, truncated = _harvest_stream(stdout, PREFIX, resilient=True)
+        requests, responses, texts, truncated, _skipped = _harvest_stream(stdout, PREFIX, resilient=True)
         self.assertEqual(("get_option_quotes",), truncated)
         degraded = next(r for r in responses if r["tool"] == "get_option_quotes")
         self.assertIsNone(degraded["output"])  # no truncated bytes stored
