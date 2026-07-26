@@ -8,11 +8,17 @@ from scripts.generate_watchdog_plist import render
 
 class GenerateWatchdogPlistTests(unittest.TestCase):
     def test_paths_follow_the_actual_repo_and_interpreter(self) -> None:
+        # A path that exists on no machine: resolve() then only normalizes it,
+        # so the assertion is not sensitive to local symlinks (e.g. Homebrew's
+        # python3 -> Cellar/python@3.x on real Macs). Same trick as the sibling
+        # test_generate_plist.py — a real path here fails on any Mac with
+        # Homebrew Python installed.
+        python = Path("/nonexistent-test-prefix/bin/python3")
         out = render(
-            python=Path("/opt/homebrew/bin/python3"),
+            python=python,
             workdir=Path("/Users/ge/ge/aitrading"),
         )
-        self.assertIn("<string>/opt/homebrew/bin/python3</string>", out)
+        self.assertIn(f"<string>{python}</string>", out)
         self.assertIn("/Users/ge/ge/aitrading/scripts/watchdog_tick.py", out)
         self.assertNotIn("Documents/AI trading agent", out)
 
