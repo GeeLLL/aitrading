@@ -37,6 +37,7 @@ os.chdir(ROOT)
 
 from monitoring.daily_schedule import SESSION_TIMEZONE
 from monitoring.market_calendar import is_market_open
+from monitoring.remote_alert import send_remote_alert
 
 REQUIRED_JOBS = (
     "com.robinhood-ai-trader.self-arming-worker",
@@ -204,10 +205,9 @@ def main() -> int:
 
     if market_day and not all_ok:
         failed = ", ".join(name for name, check in checks.items() if check["ok"] is False)
-        _notify(
-            "Robinhood 采集预检失败",
-            f"{failed} — 06:10 首个槽位前需人工处理 (logs/preflight/{today.isoformat()}.json)",
-        )
+        message = f"{failed} — 06:10 首个槽位前需人工处理 (logs/preflight/{today.isoformat()}.json)"
+        _notify("Robinhood 采集预检失败", message)
+        send_remote_alert("Robinhood 采集预检失败", message)
         return 2
     return 0
 

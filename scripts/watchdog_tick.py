@@ -13,6 +13,7 @@ if str(ROOT) not in sys.path:
 from monitoring.collection_observer import ensure_day_registered
 from monitoring.daily_schedule import SESSION_TIMEZONE
 from monitoring.market_calendar import is_market_open
+from monitoring.remote_alert import send_remote_alert
 from monitoring.scheduler_watchdog import scan_expected_runs
 from monitoring.worker_reaper import reap_overdue_workers
 
@@ -51,6 +52,9 @@ def deliver_pending_alerts(alert_directory: Path = ALERT_DIR) -> int:
             _notify(str(payload["title"]), str(payload["message"]))
         except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError, subprocess.SubprocessError):
             continue
+        # Best-effort push to the owner's phone as well (no-op without
+        # config/alerting.json); the banner alone reaches nobody asleep.
+        send_remote_alert(str(payload.get("title", "")), str(payload.get("message", "")))
         path.replace(sent / path.name)
         delivered += 1
     return delivered

@@ -49,7 +49,13 @@ def classify_worker(
     process_alive: bool,
     cmdline: str,
 ) -> str:
-    """Pure decision: what should happen to this worker PID record?"""
+    """Pure decision: what should happen to this worker PID record?
+
+    The overdue anchor is the slot's SCHEDULED time when recorded (falling
+    back to the worker's start time for older records): a fire admitted up to
+    180s late must still be reaped before the next slot fires, so the deadline
+    cannot float with the actual start.
+    """
     try:
         started_at = datetime.fromisoformat(str(record["started_at"]))
         kind = str(record.get("kind") or "")
@@ -58,10 +64,19 @@ def classify_worker(
         return INVALID_RECORD
     if started_at.tzinfo is None:
         return INVALID_RECORD
+    anchor = started_at
+    scheduled_raw = record.get("scheduled_for")
+    if scheduled_raw:
+        try:
+            scheduled = datetime.fromisoformat(str(scheduled_raw))
+            if scheduled.tzinfo is not None:
+                anchor = min(anchor, scheduled)
+        except ValueError:
+            pass
     if summary_exists:
         return FINISHED_STALE
     deadline = DEADLINE_SECONDS.get(kind, DEFAULT_DEADLINE_SECONDS)
-    if (now - started_at).total_seconds() <= deadline:
+    if (now - anchor).total_seconds() <= deadline:
         return RUNNING_OK
     if not process_alive:
         return DIED_NO_SUMMARY
@@ -99,6 +114,35 @@ def _kill_process(pid: int) -> None:
         os.kill(pid, signal.SIGKILL)
     except ProcessLookupError:
         pass
+
+
+def _kill_child_group(record: dict) -> bool:
+    """Kill the worker's recorded Claude CLI process group, if it is still the
+    CLI. The worker starts the CLI in its own session (pgid == child_pid); if
+    only the parent dies, this orphan has NO remaining timeout and would keep
+    collecting past the slot — it must never survive a reap. Guarded by a
+    cmdline check so a recycled pid is never killed."""
+    child_pid = record.get("child_pid")
+    if not isinstance(child_pid, int):
+        return False
+    alive, cmdline = _process_cmdline(child_pid)
+    if not alive or "claude" not in cmdline:
+        return False
+    try:
+        os.killpg(child_pid, signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        return False
+    for _ in range(6):
+        time.sleep(0.5)
+        try:
+            os.killpg(child_pid, 0)
+        except (ProcessLookupError, PermissionError):
+            return True
+    try:
+        os.killpg(child_pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+    return True
 
 
 def _atomic_json(path: Path, payload: dict[str, object]) -> None:
@@ -174,17 +218,23 @@ def reap_overdue_workers(
         if verdict == RUNNING_OK:
             continue
         if verdict == OVERDUE_KILL:
+            child_killed = _kill_child_group(record)
             _kill_process(int(record["pid"]))
             _file_incident(incidents, run_id, "WORKER_HUNG_KILLED", {
                 "pid": record["pid"],
                 "started_at": record.get("started_at"),
                 "kind": record.get("kind"),
+                "child_group_killed": child_killed,
             }, now)
         elif verdict == DIED_NO_SUMMARY:
+            # The parent crashed; its CLI child may live on as an orphan with
+            # no timeout — reap the recorded group too.
+            child_killed = _kill_child_group(record)
             _file_incident(incidents, run_id, "WORKER_DIED_NO_SUMMARY", {
                 "pid": record.get("pid"),
                 "started_at": record.get("started_at"),
                 "kind": record.get("kind"),
+                "child_group_killed": child_killed,
             }, now)
         elif verdict == PID_REUSED:
             _file_incident(incidents, run_id, "WORKER_PID_RECORD_STALE", {

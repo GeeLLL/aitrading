@@ -80,6 +80,45 @@ class CanaryRetryTests(unittest.TestCase):
         self.assertLessEqual(worker.CANARY_RETRY_ELAPSED_CAP_SECONDS + 300, 1200 - 120)
 
 
+class AgentProcessGroupTests(unittest.TestCase):
+    def test_child_pid_is_recorded_for_the_reaper(self):
+        import json
+        import tempfile
+        from scripts.launchd_shadow_worker import _run_agent_once
+
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            pid_path = base / "run.pid"
+            pid_path.write_text(json.dumps({"schema_version": 1, "pid": 1}), encoding="utf-8")
+            code, timed_out = _run_agent_once(
+                ["/bin/cat"], "hello", base / "out.log", base / "err.log",
+                timeout_seconds=10, attempt=1, pid_path=pid_path,
+            )
+            self.assertEqual(code, 0)
+            self.assertFalse(timed_out)
+            record = json.loads(pid_path.read_text(encoding="utf-8"))
+            self.assertIsInstance(record.get("child_pid"), int)
+
+    def test_timeout_kills_the_whole_child_group(self):
+        import tempfile
+        from scripts.launchd_shadow_worker import _run_agent_once
+
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            code, timed_out = _run_agent_once(
+                ["/bin/sleep", "30"], "", base / "out.log", base / "err.log",
+                timeout_seconds=1, attempt=1,
+            )
+            self.assertEqual(code, 2)
+            self.assertTrue(timed_out)
+            # the sleep must not linger past the call (group was killed)
+            import subprocess
+            leftovers = subprocess.run(
+                ["pgrep", "-f", "^/bin/sleep 30$"], capture_output=True, text=True,
+            )
+            self.assertNotEqual(leftovers.returncode, 0, "orphaned sleep survived the group kill")
+
+
 class SafetyInvariantTests(unittest.TestCase):
     def test_no_environment_bypass_in_worker_source(self):
         source = (ROOT / "scripts/launchd_shadow_worker.py").read_text(encoding="utf-8")

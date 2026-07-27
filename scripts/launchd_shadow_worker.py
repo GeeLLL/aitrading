@@ -194,6 +194,26 @@ def _run_canary(run_id: str, symbol: str, ack_path: Path, log_root: Path) -> int
     return 0 if verified else 2
 
 
+def _kill_process_group(pgid: int) -> None:
+    """SIGTERM the group, brief grace, then SIGKILL. Never raises."""
+    import signal
+    import time
+    try:
+        os.killpg(pgid, signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        return
+    for _ in range(6):
+        time.sleep(0.5)
+        try:
+            os.killpg(pgid, 0)
+        except (ProcessLookupError, PermissionError):
+            return
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
 def _run_agent_once(
     command: list[str],
     prompt: str,
@@ -201,11 +221,18 @@ def _run_agent_once(
     stderr_path: Path,
     timeout_seconds: int,
     attempt: int,
+    pid_path: Path | None = None,
 ) -> tuple[int, bool]:
     """Run one Claude CLI attempt. Returns (return_code, timed_out).
 
     Output is APPENDED with an attempt banner so a retry can never destroy the
     evidence of the first attempt (the old code truncated stderr on timeout).
+
+    The CLI runs in its OWN process group (start_new_session), and that group
+    id is recorded in the worker's pid record: if this parent is killed (e.g.
+    by the watchdog reaper), the child must never survive as an untimed orphan
+    that keeps collecting past the slot — the reaper kills the recorded group.
+    On our own timeout the whole group is killed here for the same reason.
     """
     banner = f"\n===== attempt {attempt} @ {datetime.now(timezone.utc).isoformat()} =====\n"
     with stdout_path.open("a", encoding="utf-8") as stdout, stderr_path.open("a", encoding="utf-8") as stderr:
@@ -214,23 +241,40 @@ def _run_agent_once(
         stdout.flush()
         stderr.flush()
         try:
-            completed = subprocess.run(
+            process = subprocess.Popen(
                 command,
-                input=prompt,
-                text=True,
-                cwd=ROOT,
+                stdin=subprocess.PIPE,
                 stdout=stdout,
                 stderr=stderr,
-                timeout=timeout_seconds,
-                check=False,
+                text=True,
+                cwd=ROOT,
+                start_new_session=True,
             )
-            return completed.returncode, False
-        except subprocess.TimeoutExpired:
-            stderr.write(f"TimeoutExpired after {timeout_seconds}s\n")
-            return 2, True
         except OSError as error:
             stderr.write(f"{type(error).__name__}: {error}\n")
             return 2, False
+        if pid_path is not None and pid_path.is_file():
+            try:
+                record = json.loads(pid_path.read_text(encoding="utf-8"))
+                if isinstance(record, dict):
+                    record["child_pid"] = process.pid  # == pgid (new session)
+                    _atomic_json(pid_path, record)
+            except (OSError, json.JSONDecodeError):
+                pass
+        try:
+            process.communicate(input=prompt, timeout=timeout_seconds)
+            return process.returncode, False
+        except subprocess.TimeoutExpired:
+            stderr.write(f"TimeoutExpired after {timeout_seconds}s\n")
+            _kill_process_group(process.pid)
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                pass
+            return 2, True
+        finally:
+            if process.poll() is None:
+                _kill_process_group(process.pid)
 
 
 def _execute_slot(
@@ -243,6 +287,7 @@ def _execute_slot(
     ack_path: Path,
     log_root: Path,
     summary_path: Path,
+    pid_path: Path | None = None,
 ) -> int:
     safe, safety = _safety_ok()
     if not safe:
@@ -284,6 +329,7 @@ def _execute_slot(
     started = datetime.now(timezone.utc)
     return_code, timed_out = _run_agent_once(
         command, prompt, stdout_path, stderr_path, PILOT_TIMEOUT_SECONDS, attempt=1,
+        pid_path=pid_path,
     )
     attempts = 1
     elapsed = (datetime.now(timezone.utc) - started).total_seconds()
@@ -293,6 +339,7 @@ def _execute_slot(
         attempts = 2
         return_code, timed_out = _run_agent_once(
             command, prompt, stdout_path, stderr_path, PILOT_RETRY_TIMEOUT_SECONDS, attempt=2,
+            pid_path=pid_path,
         )
 
     if return_code == 0:
@@ -401,6 +448,7 @@ def main() -> int:
             "run_id": run_id,
             "kind": kind,
             "started_at": now.astimezone(timezone.utc).isoformat(),
+            "scheduled_for": scheduled.astimezone(timezone.utc).isoformat(),
             "summary_path": str(summary_path),
         })
         try:
@@ -413,9 +461,15 @@ def main() -> int:
                 ack_path=ack_path,
                 log_root=log_root,
                 summary_path=summary_path,
+                pid_path=pid_path,
             )
         finally:
-            pid_path.unlink(missing_ok=True)
+            # Remove the record only after a summary exists. A crash between
+            # ack and summary leaves the record behind ON PURPOSE, so the
+            # reaper files WORKER_DIED_NO_SUMMARY instead of the slot's loss
+            # staying invisible until end of day.
+            if summary_path.is_file():
+                pid_path.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

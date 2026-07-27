@@ -17,7 +17,7 @@ class SchedulerHealthTests(unittest.TestCase):
         result = evaluate_start_ack(
             path="does-not-exist.json",
             scheduled_for=SCHEDULED,
-            checked_at=SCHEDULED + timedelta(seconds=121),
+            checked_at=SCHEDULED + timedelta(seconds=181),
         )
         self.assertFalse(result.healthy)
         self.assertEqual("SCHEDULED_RUN_MISSED", result.reason)
@@ -69,13 +69,13 @@ class SchedulerHealthTests(unittest.TestCase):
             path = write_start_ack(
                 run_id="late",
                 scheduled_for=SCHEDULED,
-                acknowledged_at=SCHEDULED + timedelta(seconds=121),
+                acknowledged_at=SCHEDULED + timedelta(seconds=181),
                 directory=directory,
             )
             result = evaluate_start_ack(
                 path=path,
                 scheduled_for=SCHEDULED,
-                checked_at=SCHEDULED + timedelta(seconds=122),
+                checked_at=SCHEDULED + timedelta(seconds=182),
             )
             self.assertEqual("START_ACK_LATE", result.reason)
 

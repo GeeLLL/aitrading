@@ -5,8 +5,11 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest import mock
 
+import monitoring.worker_reaper as reaper_module
 from monitoring.worker_reaper import (
+    _kill_child_group,
     DIED_NO_SUMMARY,
     FINISHED_STALE,
     INVALID_RECORD,
@@ -89,6 +92,27 @@ class ClassifyWorkerTests(unittest.TestCase):
                 INVALID_RECORD,
             )
 
+    def test_deadline_anchors_to_scheduled_time_not_late_start(self):
+        # Fired 170s late (admitted by the 180s freshness guard): the deadline
+        # must still count from the SCHEDULED time, or the reap could land
+        # after the next slot fires and cost a second sample.
+        payload = record(age_seconds=860)  # started 860s ago...
+        payload["scheduled_for"] = (NOW - timedelta(seconds=1030)).isoformat()  # ...scheduled 1030s ago
+        verdict = classify_worker(
+            payload, now=NOW, summary_exists=False,
+            process_alive=True, cmdline="python3 scripts/launchd_shadow_worker.py",
+        )
+        self.assertEqual(verdict, OVERDUE_KILL)
+
+    def test_unparseable_scheduled_for_falls_back_to_started_at(self):
+        payload = record(age_seconds=300)
+        payload["scheduled_for"] = "not-a-timestamp"
+        verdict = classify_worker(
+            payload, now=NOW, summary_exists=False,
+            process_alive=True, cmdline="python3 scripts/launchd_shadow_worker.py",
+        )
+        self.assertEqual(verdict, RUNNING_OK)
+
 
 class ReapOverdueWorkersTests(unittest.TestCase):
     def test_dead_worker_files_incident_and_removes_pid_record(self):
@@ -134,6 +158,51 @@ class ReapOverdueWorkersTests(unittest.TestCase):
             self.assertEqual([a["verdict"] for a in actions], [FINISHED_STALE])
             self.assertFalse((sched / "pilot-20260727-0703.pid").exists())
             self.assertFalse(incidents.exists())
+
+    def test_orphaned_cli_child_group_is_killed_on_parent_death(self):
+        # Parent crashed (record left behind), CLI child still alive: the reap
+        # must kill the recorded child GROUP, or it keeps collecting with no
+        # timeout at all.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sched = root / "logs/scheduler"
+            incidents = root / "logs/incidents"
+            sched.mkdir(parents=True)
+            payload = record(age_seconds=5000)
+            payload["pid"] = 99999999          # parent gone
+            payload["child_pid"] = 88888888    # child "alive" (mocked)
+            (sched / "pilot-20260727-0703.pid").write_text(json.dumps(payload), encoding="utf-8")
+
+            killed_groups: list[int] = []
+            real_cmdline = reaper_module._process_cmdline
+
+            def fake_cmdline(pid: int):
+                if pid == 88888888:
+                    return True, "/Users/ge/.local/bin/claude -p --output-format stream-json"
+                return real_cmdline(pid)
+
+            def fake_killpg(pgid, sig):
+                killed_groups.append(pgid)
+                raise ProcessLookupError  # first signal "kills" it instantly
+
+            with mock.patch.object(reaper_module, "_process_cmdline", side_effect=fake_cmdline), \
+                 mock.patch.object(reaper_module.os, "killpg", side_effect=fake_killpg):
+                actions = reap_overdue_workers(
+                    NOW, project_root=root, scheduler_dir=sched, incident_dir=incidents,
+                )
+
+            self.assertEqual([a["verdict"] for a in actions], [DIED_NO_SUMMARY])
+            self.assertIn(88888888, killed_groups)
+
+    def test_child_group_with_foreign_cmdline_is_never_killed(self):
+        killed: list[int] = []
+        with mock.patch.object(
+            reaper_module, "_process_cmdline",
+            return_value=(True, "/usr/libexec/some-system-daemon"),
+        ), mock.patch.object(reaper_module.os, "killpg", side_effect=lambda *a: killed.append(a)):
+            result = _kill_child_group({"child_pid": 4242})
+        self.assertFalse(result)
+        self.assertEqual(killed, [])
 
     def test_incident_write_is_idempotent(self):
         with TemporaryDirectory() as tmp:

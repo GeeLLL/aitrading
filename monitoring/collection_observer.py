@@ -28,6 +28,7 @@ from pathlib import Path
 
 from monitoring.daily_schedule import SESSION_TIMEZONE, expected_runs_for_date
 from monitoring.market_calendar import is_market_open
+from monitoring.scheduler_health import START_ACK_GRACE_SECONDS
 from monitoring.scheduler_watchdog import register_expected_run, unresolved_incident_ids
 
 DEFAULT_EXPECTATION_DIR = "logs/scheduler/expected"
@@ -35,9 +36,9 @@ DEFAULT_ACK_DIR = "logs/scheduler"
 DEFAULT_INCIDENT_DIR = "logs/incidents"
 DEFAULT_WORKER_DIR = "logs/launchd_worker"
 
-# A slot is not yet "missed" until this long past its scheduled time (mirrors the
-# watchdog's start-ack grace window).
-GRACE_SECONDS = 120
+# A slot is not yet "missed" until this long past its scheduled time — the
+# shared constant keeps this equal to the worker's freshness guard.
+GRACE_SECONDS = START_ACK_GRACE_SECONDS
 
 # Worker-summary statuses that mean the slot started (wrote an ack) but its
 # collection did NOT succeed. This is how a systemic outage that still "starts"
