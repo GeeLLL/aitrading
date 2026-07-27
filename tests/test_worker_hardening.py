@@ -29,6 +29,21 @@ class PromptTemplateTests(unittest.TestCase):
         template = (ROOT / "prompts/launchd_pilot_worker.md").read_text(encoding="utf-8")
         self.assertIn("Do not\ninfer the kind from the Run ID string", template)
 
+    def test_universe_comes_from_config_not_a_hardcoded_count(self):
+        # Route B (commit 9cf9f10) added SOFI/RIVN/BAC to config/universe.toml,
+        # but a stale "ten-symbol" phrase in this prompt made agents evaluate
+        # only 10 names for 5 straight days. The config must be the single
+        # source of truth and the prompt must never pin a symbol count.
+        template = (ROOT / "prompts/launchd_pilot_worker.md").read_text(encoding="utf-8")
+        self.assertIn("config/universe.toml", template)
+        self.assertNotIn("ten-symbol research universe", template)
+
+        from strategy.universe import load_universe_policy
+        policy = load_universe_policy(ROOT / "config/universe.toml")
+        self.assertIn("SOFI", policy["symbols"])
+        self.assertIn("RIVN", policy["symbols"])
+        self.assertIn("BAC", policy["symbols"])
+
 
 class CanaryRetryTests(unittest.TestCase):
     def test_transient_failure_then_success_completes_with_two_attempts(self):

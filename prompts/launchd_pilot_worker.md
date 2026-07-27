@@ -38,9 +38,13 @@ may be stale; this canary tests launchd -> Claude Code CLI -> official read-only
 For a PILOT_SAMPLE run:
 
 1. Refresh any unfinished option quote trajectories first.
-2. Read the ten-symbol research universe using current quotes and completed
-   five-minute bars. Do not apply a ten-second freshness rule to old lookback
-   bars; only the newest completed bar uses the 420-second limit.
+2. Read the research universe from `config/universe.toml` and evaluate EVERY
+   symbol listed there — the config file is the single source of truth; never
+   assume a fixed count and never subset it (a stale "ten-symbol" phrasing
+   here previously caused SOFI/RIVN/BAC to be silently skipped for days).
+   Use current quotes and completed five-minute bars. Do not apply a
+   ten-second freshness rule to old lookback bars; only the newest completed
+   bar uses the 420-second limit.
 3. Evaluate frozen paired labels BASE_25, BASE_30, AI_RANK_V1, and up to two
    NEAR_MISS candidates without future data. AI may rank or abstain only.
 4. A policy trade remains limited to one virtual candidate per day. Additional
