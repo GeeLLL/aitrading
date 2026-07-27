@@ -3,6 +3,7 @@ from __future__ import annotations
 import fcntl
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
@@ -41,6 +42,10 @@ CANARY_RETRY_ELAPSED_CAP_SECONDS = 420   # no 2nd canary attempt after this
 PILOT_FAST_FAILURE_SECONDS = 240         # pilot retry only if attempt 1 died faster than this
 PILOT_RETRY_TIMEOUT_SECONDS = 480        # and the retry itself gets a tighter cap
 PILOT_TIMEOUT_SECONDS = 720
+# The gate's five-step deterministic chain (collect + reconcile + tradability +
+# probe + adjudicate) runs longer than a pilot sample; 900s still finishes
+# comfortably before the reaper's 1020s deadline and the next slot.
+MARKET_GATE_TIMEOUT_SECONDS = 900
 
 # The pilot agent needs read-only Robinhood MCP tools plus the ability to run
 # the project's deterministic CLI and write its own logs inside the workspace.
@@ -55,6 +60,41 @@ PILOT_ALLOWED_TOOLS = ",".join((
     "Bash(python3:*)",
     "Bash(/Library/Frameworks/Python.framework/Versions/3.13/bin/python3:*)",
 ))
+
+# Deny rules beat allow rules in Claude Code: the unattended agent must never
+# be able to mint a formal-Shadow authorization or touch governance state,
+# no matter what its prompt or any injected content says.
+PILOT_DISALLOWED_TOOLS = ",".join((
+    "Bash(python3 main.py shadow-authorize*)",
+    "Bash(python3 main.py shadow-authorize:*)",
+    "Bash(/Library/Frameworks/Python.framework/Versions/3.13/bin/python3 main.py shadow-authorize*)",
+    "Write(state/**)",
+    "Edit(state/**)",
+    "Write(./state/**)",
+    "Edit(./state/**)",
+))
+
+# Post-run transcript hygiene: account-domain tool results stream through the
+# gate agent's stdout transcript verbatim. Deterministically mask any JSON
+# field whose key mentions "account" before the run finishes.
+_ACCOUNT_FIELD = re.compile(
+    r'("(?:\\"|[^"])*account(?:\\"|[^"])*"\s*:\s*")((?:\\"|[^"])+)(")',
+    re.IGNORECASE,
+)
+
+
+def _redact_account_identifiers(*paths: Path) -> None:
+    for path in paths:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        redacted = _ACCOUNT_FIELD.sub(lambda m: m.group(1) + "[REDACTED]" + m.group(3), text)
+        if redacted != text:
+            try:
+                path.write_text(redacted, encoding="utf-8")
+            except OSError:
+                pass
 
 
 def _log_root(now: datetime) -> Path:
@@ -316,6 +356,7 @@ def _execute_slot(
             claude_binary(), "-p",
             "--output-format", "stream-json", "--verbose",
             "--allowedTools", PILOT_ALLOWED_TOOLS,
+            "--disallowedTools", PILOT_DISALLOWED_TOOLS,
         ]
     except OfficialCollectorError as error:
         _atomic_json(summary_path, {
@@ -326,9 +367,12 @@ def _execute_slot(
         })
         return 2
 
+    first_attempt_timeout = (
+        MARKET_GATE_TIMEOUT_SECONDS if kind == "MARKET_GATE" else PILOT_TIMEOUT_SECONDS
+    )
     started = datetime.now(timezone.utc)
     return_code, timed_out = _run_agent_once(
-        command, prompt, stdout_path, stderr_path, PILOT_TIMEOUT_SECONDS, attempt=1,
+        command, prompt, stdout_path, stderr_path, first_attempt_timeout, attempt=1,
         pid_path=pid_path,
     )
     attempts = 1
@@ -341,6 +385,8 @@ def _execute_slot(
             command, prompt, stdout_path, stderr_path, PILOT_RETRY_TIMEOUT_SECONDS, attempt=2,
             pid_path=pid_path,
         )
+
+    _redact_account_identifiers(stdout_path, stderr_path)
 
     if return_code == 0:
         # Exit code 0 alone is not completion: the agent must have written its

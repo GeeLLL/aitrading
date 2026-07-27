@@ -29,13 +29,19 @@ deterministically and durably, in this exact order:
    `python3 main.py raw-verify <path> --sha256 <sha>`.
 2. Live account-domain reads (refer to accounts by role only; never store
    any identifier, name, or number): reconcile account/cash and
-   orders/positions, and write the two reconciliation objects into ONE
-   evidence JSON file under `logs/qualification/<date>/`.
-3. Live session evidence: call `get_equity_tradability` for SPY and add an
-   `instrument_session` object to the same evidence file:
+   orders/positions, then write ONE evidence JSON file under
+   `logs/qualification/<date>/` whose top-level keys are EXACTLY
+   `account_reconciliation`, `orders_positions_reconciliation`, and
+   `instrument_session`. Each reconciliation object must be EXACTLY of the
+   form `{{"reconciled": true, "evidence": ["<role-based fact>", "..."]}}` —
+   and when something does NOT reconcile, write `"reconciled": false` with a
+   `"reason"`; never invent success.
+3. Live session evidence: call `get_equity_tradability` for SPY and set the
+   `instrument_session` key in the same file to EXACTLY:
    `{{"tool": "get_equity_tradability", "symbol": "SPY", "active": <bool>,
-   "evidence": ["<fields quoted from the tool response>"]}}`. Never invent a
-   field the tool did not return.
+   "evidence": ["<fields quoted from the tool response>"]}}`. The symbol
+   MUST equal the snapshot symbol (the verifier rejects a mismatch). Never
+   invent a field the tool did not return.
 4. Fresh-quote probe: pick one to three option instrument ids nearest the
    money from the snapshot's `get_option_instruments` output and run
    `python3 main.py fresh-quote-probe <id> [<id> ...]`; note the stored
@@ -45,7 +51,11 @@ deterministically and durably, in this exact order:
    <evidence file> --fresh-quote-snapshot <probe path> --out
    logs/qualification/<date>/<run id>.market-checks.json`.
    PASS, FAIL, and UNKNOWN must be preserved exactly as adjudicated; no
-   missing value may be invented. This run does not authorize formal Shadow.
+   missing value may be invented. This run does not authorize formal Shadow
+   (authorization is an owner-only action and its tools are denied to you).
+   Time budget: finish all five steps within 12 minutes; attempt any failing
+   step at most twice, then write the evidence document with that check
+   honestly FAIL or UNKNOWN instead of running out the clock.
 
 For a CANARY run, call only the project-provided `python3 main.py raw-collect
 SPY`, verify the returned immutable snapshot with `python3 main.py raw-verify`,
@@ -74,10 +84,13 @@ For a PILOT_SAMPLE run:
    limit, and the fill window MUST be adjudicated inside this same run: the
    frozen policy's `maximum_fill_wait_seconds` is 60, which a 20-minute slot
    cadence can never observe across runs (a limit met 18 minutes later is
-   NOT a fill). After recording the limit, wait roughly 60-75 seconds, then
-   perform ONE more instrument-specific quote refresh and adjudicate: a
-   later observed ask at or below the limit is a simulated fill AT THAT
-   OBSERVED ASK; otherwise record NO_FILL_WINDOW_EXPIRED. Plan the run so
+   NOT a fill). After recording the limit, wait roughly 45-55 seconds, then
+   perform ONE more instrument-specific quote refresh NO LATER than 60
+   seconds after the limit was recorded — a quote observed after the 60s
+   window cannot adjudicate a fill, and deterministic close-of-day code
+   enforces this window on the recorded timestamps. A later observed ask at
+   or below the limit is a simulated fill AT THAT OBSERVED ASK; otherwise
+   record NO_FILL_WINDOW_EXPIRED. Plan the run so
    this single extra refresh fits inside the six-minute MCP budget; if it
    cannot, record FILL_WINDOW_NOT_ADJUDICABLE rather than guessing.
    Simulated exit uses observed bid. Record no-fill, spread, latency, and

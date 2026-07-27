@@ -24,7 +24,7 @@ import argparse
 import json
 import sys
 import tomllib
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -36,6 +36,46 @@ from monitoring.daily_schedule import SESSION_TIMEZONE, expected_runs_for_date
 
 POLICY_LABELS = {"BASE_25", "BASE_30", "AI_RANK_V1"}
 SUCCESS_STATUSES = {"COMPLETED"}
+
+# The frozen policy's fill window (strategy_v1.0 maximum_fill_wait_seconds),
+# plus a small tolerance for clock-read skew between the limit record and the
+# confirming refresh. A quote observed outside this window can NEVER
+# adjudicate a fill — this is the deterministic enforcement of the same rule
+# the pilot prompt states.
+DEFAULT_FILL_WINDOW_SECONDS = 60
+FILL_WINDOW_SKEW_SECONDS = 5
+
+
+def _parse_ts(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    normalized = value[:-1] + "+00:00" if value.endswith("Z") else value
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else None
+
+
+def fill_window_seconds(safety_root: Path) -> int:
+    """Read maximum_fill_wait_seconds from the frozen strategy policy."""
+    try:
+        with (safety_root / "strategy/strategy_v1.0.toml").open("rb") as handle:
+            policy = tomllib.load(handle)
+    except OSError:
+        return DEFAULT_FILL_WINDOW_SECONDS
+
+    def find(obj) -> int | None:
+        if isinstance(obj, dict):
+            for key, value in obj.items():
+                if key == "maximum_fill_wait_seconds" and isinstance(value, int):
+                    return value
+                found = find(value)
+                if found is not None:
+                    return found
+        return None
+
+    return find(policy) or DEFAULT_FILL_WINDOW_SECONDS
 
 
 def _decimal(value: object) -> Decimal | None:
@@ -129,17 +169,28 @@ def reconstruct_trade(events: list[dict], friction: Decimal) -> dict:
         record["outcome"] = "NO_LIMIT_PRICE"
         return record
 
-    candidate_time = str(candidate.get("quote_received_at") or "")
+    candidate_at = _parse_ts(candidate.get("quote_received_at"))
+    if candidate_at is None:
+        record["outcome"] = "NO_CANDIDATE_TIMESTAMP"
+        return record
+    window = timedelta(seconds=DEFAULT_FILL_WINDOW_SECONDS + FILL_WINDOW_SKEW_SECONDS)
     fill = None
+    window_expired_seen = False
     for quote in sorted(quotes, key=lambda event: str(event.get("quote_received_at") or "")):
-        if str(quote.get("quote_received_at") or "") <= candidate_time:
+        quote_at = _parse_ts(quote.get("quote_received_at"))
+        if quote_at is None or quote_at <= candidate_at:
+            continue
+        if quote_at - candidate_at > window:
+            # A quote observed after the frozen fill window proves nothing
+            # about fillability inside it — the agent's own NO_FILL stands.
+            window_expired_seen = True
             continue
         ask = _decimal(quote.get("ask"))
         if ask is not None and ask <= limit:
             fill = ask
             break
     if fill is None:
-        record["outcome"] = "NO_FILL"
+        record["outcome"] = "NO_FILL_WINDOW_EXPIRED" if window_expired_seen else "NO_FILL"
         return record
     record["entry_fill"] = float(fill)
 

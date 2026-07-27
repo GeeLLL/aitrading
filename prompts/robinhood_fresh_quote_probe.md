@@ -15,8 +15,9 @@ Rules:
 - Never call any order, review, cancel, watchlist-mutation, account-mutation,
   transfer, account, portfolio, position, or order-status tool.
 
-If the tool call is denied or errors and one retry also fails, stop
-immediately; local code fails the run closed.
+If the tool call is denied or errors, stop immediately — do NOT retry (the
+strict harvest fails closed on any errored result, so a retry cannot help;
+the caller relaunches a clean probe instead).
 
 When the call has completed, end the run: your final message must be exactly
 

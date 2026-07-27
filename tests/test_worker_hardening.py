@@ -160,6 +160,38 @@ class AgentProcessGroupTests(unittest.TestCase):
 
 
 class SafetyInvariantTests(unittest.TestCase):
+    def test_agent_cannot_mint_shadow_authorization(self):
+        from scripts.launchd_shadow_worker import PILOT_DISALLOWED_TOOLS
+        self.assertIn("shadow-authorize", PILOT_DISALLOWED_TOOLS)
+        self.assertIn("Write(state/**)", PILOT_DISALLOWED_TOOLS)
+        self.assertIn("Edit(state/**)", PILOT_DISALLOWED_TOOLS)
+        source = (ROOT / "scripts/launchd_shadow_worker.py").read_text(encoding="utf-8")
+        self.assertIn('"--disallowedTools", PILOT_DISALLOWED_TOOLS', source)
+
+    def test_market_gate_timeout_stays_under_reaper_deadline(self):
+        from scripts.launchd_shadow_worker import MARKET_GATE_TIMEOUT_SECONDS
+        from monitoring.worker_reaper import DEFAULT_DEADLINE_SECONDS
+        # Gate cap + ack/dashboard overhead must finish before the reaper fires.
+        self.assertLessEqual(MARKET_GATE_TIMEOUT_SECONDS + 60, DEFAULT_DEADLINE_SECONDS)
+
+    def test_account_fields_are_redacted_from_transcripts(self):
+        import tempfile
+        from scripts.launchd_shadow_worker import _redact_account_identifiers
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "t.jsonl"
+            path.write_text(
+                '{"account_number":"5PY123456","rhs_account_id":"998877","volume":1641,'
+                '"AccountNumber":"ABC-1","note":"account of events"}',
+                encoding="utf-8",
+            )
+            _redact_account_identifiers(path)
+            text = path.read_text(encoding="utf-8")
+        self.assertNotIn("5PY123456", text)
+        self.assertNotIn("998877", text)
+        self.assertNotIn("ABC-1", text)
+        self.assertIn('"volume":1641', text)          # market data untouched
+        self.assertIn("account of events", text)      # non-key prose untouched
+
     def test_no_environment_bypass_in_worker_source(self):
         source = (ROOT / "scripts/launchd_shadow_worker.py").read_text(encoding="utf-8")
         self.assertNotIn("SHADOW_TRADING_TEST_MODE", source)

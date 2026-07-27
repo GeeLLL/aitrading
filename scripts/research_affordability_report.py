@@ -93,11 +93,10 @@ def _quote_rows_from_envelope(envelope: dict) -> list[dict]:
         bid = _dec(quote.get("bid_price") or quote.get("bid"))
         ask = _dec(quote.get("ask_price") or quote.get("ask"))
         delta = _dec(quote.get("delta"))
+        close = item.get("close") if isinstance(item.get("close"), dict) else {}
+        symbol_value = inst.get("chain_symbol") or close.get("symbol") or symbol or "?"
         rows.append({
-            "source_symbol": str(
-                inst.get("chain_symbol")
-                or (item.get("close") or {}).get("symbol") if isinstance(item.get("close"), dict) else None
-            ) if (inst.get("chain_symbol") or isinstance(item.get("close"), dict)) else str(symbol),
+            "source_symbol": str(symbol_value),
             "instrument_id": instrument_id,
             "strike": inst.get("strike_price"),
             "expiration": inst.get("expiration_date"),

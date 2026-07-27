@@ -54,15 +54,26 @@ class ReconstructTradeTests(unittest.TestCase):
     def test_no_later_quote_at_or_below_limit_means_no_fill(self):
         events = [
             event("CANDIDATE", received="2026-07-27T17:00:00Z", ask=2.00),
-            event("QUOTE", received="2026-07-27T17:05:00Z", ask=2.10),
+            event("QUOTE", received="2026-07-27T17:00:30Z", ask=2.10),
         ]
         trade = reconstruct_trade(events, FRICTION)
         self.assertEqual(trade["outcome"], "NO_FILL")
 
+    def test_quote_outside_60s_window_never_fills_even_at_limit(self):
+        # The frozen maximum_fill_wait_seconds is 60: an ask at/below the limit
+        # observed 90s later proves nothing about fillability in the window.
+        events = [
+            event("CANDIDATE", received="2026-07-27T17:00:00Z", ask=2.00),
+            event("QUOTE", received="2026-07-27T17:01:30Z", ask=1.90),
+        ]
+        trade = reconstruct_trade(events, FRICTION)
+        self.assertEqual(trade["outcome"], "NO_FILL_WINDOW_EXPIRED")
+        self.assertIsNone(trade["net_pnl_usd"])
+
     def test_filled_and_exited_computes_deterministic_net(self):
         events = [
             event("CANDIDATE", received="2026-07-27T17:00:00Z", ask=2.00),
-            event("QUOTE", received="2026-07-27T17:05:00Z", ask=1.95),
+            event("QUOTE", received="2026-07-27T17:00:45Z", ask=1.95),
             event("HORIZON_CLOSE", received="2026-07-27T17:30:00Z", bid=2.25),
         ]
         trade = reconstruct_trade(events, FRICTION)
@@ -76,7 +87,7 @@ class ReconstructTradeTests(unittest.TestCase):
     def test_losing_trade_subtracts_friction_too(self):
         events = [
             event("CANDIDATE", received="2026-07-27T17:00:00Z", ask=2.00),
-            event("QUOTE", received="2026-07-27T17:05:00Z", ask=2.00),
+            event("QUOTE", received="2026-07-27T17:00:45Z", ask=2.00),
             event("HORIZON_CLOSE", received="2026-07-27T17:30:00Z", bid=1.80),
         ]
         trade = reconstruct_trade(events, FRICTION)
@@ -95,7 +106,7 @@ class ReconstructTradeTests(unittest.TestCase):
     def test_fill_without_horizon_close_is_incomplete_not_pnl(self):
         events = [
             event("CANDIDATE", received="2026-07-27T17:00:00Z", ask=2.00),
-            event("QUOTE", received="2026-07-27T17:05:00Z", ask=1.90),
+            event("QUOTE", received="2026-07-27T17:00:45Z", ask=1.90),
         ]
         trade = reconstruct_trade(events, FRICTION)
         self.assertEqual(trade["outcome"], "FILLED_NO_HORIZON_CLOSE")

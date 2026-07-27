@@ -151,26 +151,44 @@ class InstrumentSessionEvidenceTests(unittest.TestCase):
 
     def test_wrong_tool_fails_closed(self) -> None:
         results = verify_market_checks(self.snapshot, instrument_session={
-            "tool": "get_equity_quotes", "active": True, "evidence": ["x"],
+            "tool": "get_equity_quotes", "symbol": "SPY", "active": True, "evidence": ["x"],
         })
         self.assertEqual(results["official_instrument_session"].status, CheckStatus.FAIL)
         self.assertIn("WRONG_TOOL", results["official_instrument_session"].reason or "")
 
     def test_inactive_session_fails(self) -> None:
         results = verify_market_checks(self.snapshot, instrument_session={
-            "tool": "get_equity_tradability", "active": False, "evidence": ["halted"],
+            "tool": "get_equity_tradability", "symbol": "SPY", "active": False, "evidence": ["halted"],
         })
         self.assertEqual(results["official_instrument_session"].status, CheckStatus.FAIL)
 
     def test_missing_evidence_fails(self) -> None:
         results = verify_market_checks(self.snapshot, instrument_session={
-            "tool": "get_equity_tradability", "active": True, "evidence": [],
+            "tool": "get_equity_tradability", "symbol": "SPY", "active": True, "evidence": [],
         })
         self.assertEqual(results["official_instrument_session"].status, CheckStatus.FAIL)
 
     def test_absent_stays_unknown(self) -> None:
         results = verify_market_checks(self.snapshot)
         self.assertEqual(results["official_instrument_session"].status, CheckStatus.UNKNOWN)
+
+    def test_symbol_mismatch_fails_closed(self) -> None:
+        results = verify_market_checks(self.snapshot, instrument_session={
+            "tool": "get_equity_tradability", "symbol": "QQQ", "active": True, "evidence": ["x"],
+        })
+        self.assertEqual(results["official_instrument_session"].status, CheckStatus.FAIL)
+        self.assertIn("SYMBOL_MISMATCH", results["official_instrument_session"].reason or "")
+
+    def test_malformed_evidence_shapes_fail_not_crash(self) -> None:
+        results = verify_market_checks(
+            self.snapshot,
+            instrument_session="yes",
+            account_reconciliation=["reconciled"],
+        )
+        self.assertEqual(results["official_instrument_session"].status, CheckStatus.FAIL)
+        self.assertEqual(
+            results["official_account_cash_reconciliation"].status, CheckStatus.FAIL
+        )
 
 
 class FreshQuoteProbeTests(unittest.TestCase):
@@ -185,46 +203,103 @@ class FreshQuoteProbeTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.tmp.cleanup()
 
-    def test_fresh_probe_overrides_stale_main_snapshot_measurement(self) -> None:
+    def _probe(self, *, quote_age_seconds: int = 2) -> tuple[Path, "datetime"]:
         probe_received = self.now + timedelta(seconds=120)
         probe = _store_probe(
             self.root / "probe", received=probe_received,
-            quote_ts=(probe_received - timedelta(seconds=2)).isoformat(),
+            quote_ts=(probe_received - timedelta(seconds=quote_age_seconds)).isoformat(),
         )
-        results = verify_market_checks(self.snapshot, fresh_quote_snapshot=probe)
+        return probe, probe_received
+
+    def test_fresh_probe_overrides_stale_main_snapshot_measurement(self) -> None:
+        probe, probe_received = self._probe()
+        results = verify_market_checks(
+            self.snapshot, fresh_quote_snapshot=probe,
+            adjudicated_at=probe_received + timedelta(seconds=30),
+        )
         self.assertEqual(results["fresh_option_quote"].status, CheckStatus.PASS)
         self.assertTrue(
             any("probe_snapshot_id=" in item for item in results["fresh_option_quote"].evidence)
         )
 
     def test_stale_probe_still_fails(self) -> None:
-        probe_received = self.now + timedelta(seconds=120)
-        probe = _store_probe(
-            self.root / "probe", received=probe_received,
-            quote_ts=(probe_received - timedelta(seconds=45)).isoformat(),
+        probe, probe_received = self._probe(quote_age_seconds=45)
+        results = verify_market_checks(
+            self.snapshot, fresh_quote_snapshot=probe,
+            adjudicated_at=probe_received + timedelta(seconds=30),
         )
-        results = verify_market_checks(self.snapshot, fresh_quote_snapshot=probe)
         self.assertEqual(results["fresh_option_quote"].status, CheckStatus.FAIL)
         self.assertIn("QUOTE_STALE", results["fresh_option_quote"].reason or "")
 
-    def test_tampered_probe_fails_closed_never_falls_back(self) -> None:
-        probe_received = self.now + timedelta(seconds=120)
+    def test_replayed_old_probe_fails_contemporaneity(self) -> None:
+        # THE replay attack: a genuine, internally-fresh historical probe must
+        # never adjudicate freshness for a later gate run.
+        probe, probe_received = self._probe()
+        results = verify_market_checks(
+            self.snapshot, fresh_quote_snapshot=probe,
+            adjudicated_at=probe_received + timedelta(minutes=30),
+        )
+        self.assertEqual(results["fresh_option_quote"].status, CheckStatus.FAIL)
+        self.assertIn("PROBE_NOT_CONTEMPORANEOUS", results["fresh_option_quote"].reason or "")
+
+    def test_probe_predating_snapshot_fails(self) -> None:
+        probe_received = self.now - timedelta(seconds=120)  # before snapshot receipt
         probe = _store_probe(
             self.root / "probe", received=probe_received,
             quote_ts=(probe_received - timedelta(seconds=2)).isoformat(),
         )
+        results = verify_market_checks(
+            self.snapshot, fresh_quote_snapshot=probe,
+            adjudicated_at=probe_received + timedelta(seconds=30),
+        )
+        self.assertEqual(results["fresh_option_quote"].status, CheckStatus.FAIL)
+        self.assertIn("PROBE_PREDATES_SNAPSHOT", results["fresh_option_quote"].reason or "")
+
+    def test_envelope_without_probe_marker_fails(self) -> None:
+        # An arbitrary vault snapshot containing a get_option_quotes result is
+        # NOT a probe; the marker is mandatory.
+        plain = _store_snapshot(
+            self.root / "plain",
+            received=self.now + timedelta(seconds=120),
+            quote_ts=(self.now + timedelta(seconds=118)).isoformat(),
+        )
+        results = verify_market_checks(
+            self.snapshot, fresh_quote_snapshot=plain,
+            adjudicated_at=self.now + timedelta(seconds=150),
+        )
+        self.assertEqual(results["fresh_option_quote"].status, CheckStatus.FAIL)
+        self.assertIn("PROBE_MARKER_MISSING", results["fresh_option_quote"].reason or "")
+
+    def test_unindexed_probe_envelope_fails_closed(self) -> None:
+        # Canonically-encoded but never store()d: wholesale fabrication.
+        probe, probe_received = self._probe()
+        index = self.root / "probe" / "vault_index.jsonl"
+        index.write_text("", encoding="utf-8")
+        results = verify_market_checks(
+            self.snapshot, fresh_quote_snapshot=probe,
+            adjudicated_at=probe_received + timedelta(seconds=30),
+        )
+        self.assertEqual(results["fresh_option_quote"].status, CheckStatus.FAIL)
+        self.assertIn("PROBE_VERIFY_FAILED", results["fresh_option_quote"].reason or "")
+
+    def test_tampered_probe_fails_closed_never_falls_back(self) -> None:
+        probe, probe_received = self._probe()
         envelope = json.loads(probe.read_text(encoding="utf-8"))
         envelope["response"]["tool_results"][0]["output"]["quotes"][0]["ask"] = "9.99"
         probe.write_bytes(
             json.dumps(envelope, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
         )
-        results = verify_market_checks(self.snapshot, fresh_quote_snapshot=probe)
+        results = verify_market_checks(
+            self.snapshot, fresh_quote_snapshot=probe,
+            adjudicated_at=probe_received + timedelta(seconds=30),
+        )
         self.assertEqual(results["fresh_option_quote"].status, CheckStatus.FAIL)
         self.assertIn("PROBE_VERIFY_FAILED", results["fresh_option_quote"].reason or "")
 
     def test_missing_probe_file_fails_closed(self) -> None:
         results = verify_market_checks(
-            self.snapshot, fresh_quote_snapshot=self.root / "nope.json"
+            self.snapshot, fresh_quote_snapshot=self.root / "nope.json",
+            adjudicated_at=self.now + timedelta(seconds=150),
         )
         self.assertEqual(results["fresh_option_quote"].status, CheckStatus.FAIL)
 
