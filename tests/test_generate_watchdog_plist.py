@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 import unittest
 from pathlib import Path
 
@@ -8,11 +9,14 @@ from scripts.generate_watchdog_plist import render
 
 class GenerateWatchdogPlistTests(unittest.TestCase):
     def test_paths_follow_the_actual_repo_and_interpreter(self) -> None:
+        # Use the actual Python executable path, which gets resolved to its real location
+        python_exe = Path(sys.executable).resolve()
         out = render(
-            python=Path("/opt/homebrew/bin/python3"),
+            python=python_exe,
             workdir=Path("/Users/ge/ge/aitrading"),
         )
-        self.assertIn("<string>/opt/homebrew/bin/python3</string>", out)
+        # Verify the actual resolved Python path appears in the output
+        self.assertIn(f"<string>{python_exe}</string>", out)
         self.assertIn("/Users/ge/ge/aitrading/scripts/watchdog_tick.py", out)
         self.assertNotIn("Documents/AI trading agent", out)
 
