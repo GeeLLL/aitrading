@@ -41,6 +41,7 @@ READ_ONLY_ROBINHOOD_TOOLS = (
     "get_option_instruments",
     "get_option_quotes",
     "get_earnings_calendar",
+    "get_equity_tradability",
 )
 
 EXPLICITLY_DISALLOWED_TOOLS = (
@@ -256,7 +257,8 @@ def _result_text(content: object) -> str:
 
 
 def _harvest_stream(
-    stdout: str, expected_prefix: str, *, resilient: bool = False
+    stdout: str, expected_prefix: str, *, resilient: bool = False,
+    required_tools: frozenset[str] = RAW_REQUIRED_TOOLS,
 ) -> tuple[list[dict], list[dict], list[str], tuple[str, ...]]:
     """Parse claude stream-json output into ordered (request, response) pairs.
 
@@ -373,7 +375,7 @@ def _harvest_stream(
         responses.append({"tool": tool, "output": output})
         response_texts.append(text)
     called = {call["tool"] for call in tool_calls}
-    missing = RAW_REQUIRED_TOOLS - called
+    missing = required_tools - called
     if missing:
         raise OfficialCollectorError(
             "Harvested snapshot is incomplete; missing tools: " + ",".join(sorted(missing))
@@ -454,6 +456,87 @@ def collect_official_raw_snapshot(
     if skipped_lines:
         # Surface (don't hide) any non-JSON stream lines — an early signal that
         # the Claude CLI stream-json format is drifting.
+        request_envelope["stream_skipped_lines"] = skipped_lines
+    return RawDataVault(root / vault_root).store(
+        source="ROBINHOOD_OFFICIAL_MCP",
+        request=request_envelope,
+        response={"tool_results": responses},
+        source_updated_at=_freshest_source_timestamp(response_texts, not_after=received_at),
+        received_at=received_at,
+    )
+
+
+INSTRUMENT_ID_PATTERN = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+PROBE_REQUIRED_TOOLS = frozenset({"get_option_quotes"})
+PROBE_MAX_INSTRUMENTS = 6
+
+
+def collect_fresh_option_quote_probe(
+    instrument_ids: list[str],
+    *,
+    project_root: str | Path = ".",
+    vault_root: str | Path = "logs/raw",
+    timeout_seconds: int = 120,
+) -> RawSnapshotReceipt:
+    """Vault-stored probe proving a FRESH option quote is obtainable right now.
+
+    The six-tool snapshot takes minutes, so its option quotes are structurally
+    aged by collection time — a measurement artifact the fresh_option_quote
+    market check must not confuse with real staleness. This probe makes exactly
+    ONE get_option_quotes call (allowlist contains nothing else) and stores the
+    result through the same immutable vault path, so quote-updated-at versus
+    received_at genuinely measures freshness. Read-only; fails closed on any
+    irregularity; never used as market-sample evidence.
+    """
+
+    if not instrument_ids or len(instrument_ids) > PROBE_MAX_INSTRUMENTS:
+        raise OfficialCollectorError(
+            f"Probe requires 1-{PROBE_MAX_INSTRUMENTS} option instrument ids."
+        )
+    normalized_ids = [str(identifier).strip().lower() for identifier in instrument_ids]
+    for identifier in normalized_ids:
+        if not INSTRUMENT_ID_PATTERN.fullmatch(identifier):
+            raise OfficialCollectorError("Invalid option instrument id for probe.")
+    root = Path(project_root).resolve()
+    prompt = (root / "prompts/robinhood_fresh_quote_probe.md").read_text(encoding="utf-8").format(
+        instrument_ids=", ".join(normalized_ids)
+    )
+    command = [
+        claude_binary(),
+        "-p",
+        "--output-format", "stream-json",
+        "--verbose",
+        "--allowedTools", f"mcp__{MCP_SERVER_NAME}__get_option_quotes",
+        "--disallowedTools", ",".join(EXPLICITLY_DISALLOWED_TOOLS),
+    ]
+    try:
+        completed = subprocess.run(
+            command, input=prompt, text=True, cwd=root, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, timeout=timeout_seconds, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise OfficialCollectorError("Fresh-quote probe failed or timed out.") from error
+    if completed.returncode != 0:
+        raise OfficialCollectorError(
+            "Fresh-quote probe returned no valid result. "
+            f"exit={completed.returncode}; "
+            f"{_safe_failure_detail(getattr(completed, 'stderr', None))}"
+        )
+    expected_prefix = f"mcp__{MCP_SERVER_NAME}__"
+    requests, responses, response_texts, truncated_tools, skipped_lines = _harvest_stream(
+        completed.stdout, expected_prefix, resilient=False,
+        required_tools=PROBE_REQUIRED_TOOLS,
+    )
+    received_at = datetime.now(timezone.utc)
+    request_envelope: dict[str, object] = {
+        "schema_version": 1,
+        "transport": "CLAUDE_STREAM_JSON_HARVEST",
+        "probe": "FRESH_OPTION_QUOTE",
+        "instrument_ids": normalized_ids,
+        "tool_calls": requests,
+        "partial": False,
+    }
+    if skipped_lines:
         request_envelope["stream_skipped_lines"] = skipped_lines
     return RawDataVault(root / vault_root).store(
         source="ROBINHOOD_OFFICIAL_MCP",

@@ -22,12 +22,30 @@ Hard constraints:
 - Never store account numbers, names, credentials, tokens, or personal data.
 - Every result is `PILOT_EXCLUDED_FROM_PERFORMANCE`.
 
-For a MARKET_GATE run, collect and durably report the six pending official
-market checks: immutable raw MCP snapshot, deterministic replay equality,
-instrument session, account/cash reconciliation, orders/positions
-reconciliation, and a fresh option quote. PASS, FAIL, and UNKNOWN must be
-preserved; no missing value may be invented. This run does not authorize
-formal Shadow.
+For a MARKET_GATE run, adjudicate the six official market checks
+deterministically and durably, in this exact order:
+
+1. `python3 main.py raw-collect SPY`, then verify the returned path with
+   `python3 main.py raw-verify <path> --sha256 <sha>`.
+2. Live account-domain reads (refer to accounts by role only; never store
+   any identifier, name, or number): reconcile account/cash and
+   orders/positions, and write the two reconciliation objects into ONE
+   evidence JSON file under `logs/qualification/<date>/`.
+3. Live session evidence: call `get_equity_tradability` for SPY and add an
+   `instrument_session` object to the same evidence file:
+   `{{"tool": "get_equity_tradability", "symbol": "SPY", "active": <bool>,
+   "evidence": ["<fields quoted from the tool response>"]}}`. Never invent a
+   field the tool did not return.
+4. Fresh-quote probe: pick one to three option instrument ids nearest the
+   money from the snapshot's `get_option_instruments` output and run
+   `python3 main.py fresh-quote-probe <id> [<id> ...]`; note the stored
+   vault path it prints.
+5. Adjudicate deterministically:
+   `python3 main.py market-check-verify <snapshot path> --evidence
+   <evidence file> --fresh-quote-snapshot <probe path> --out
+   logs/qualification/<date>/<run id>.market-checks.json`.
+   PASS, FAIL, and UNKNOWN must be preserved exactly as adjudicated; no
+   missing value may be invented. This run does not authorize formal Shadow.
 
 For a CANARY run, call only the project-provided `python3 main.py raw-collect
 SPY`, verify the returned immutable snapshot with `python3 main.py raw-verify`,
@@ -53,8 +71,17 @@ For a PILOT_SAMPLE run:
    refresh. Preserve bid, ask, mark, source updated_at, local receipt time, IV,
    Greeks, volume, and OI. Missing fields stay null/UNKNOWN.
 6. Simulated entry requires a later observed ask at or below the recorded
-   limit. Simulated exit uses observed bid. Record no-fill, spread, latency,
-   and base/stress friction; never assume a mark fill.
+   limit, and the fill window MUST be adjudicated inside this same run: the
+   frozen policy's `maximum_fill_wait_seconds` is 60, which a 20-minute slot
+   cadence can never observe across runs (a limit met 18 minutes later is
+   NOT a fill). After recording the limit, wait roughly 60-75 seconds, then
+   perform ONE more instrument-specific quote refresh and adjudicate: a
+   later observed ask at or below the limit is a simulated fill AT THAT
+   OBSERVED ASK; otherwise record NO_FILL_WINDOW_EXPIRED. Plan the run so
+   this single extra refresh fits inside the six-minute MCP budget; if it
+   cannot, record FILL_WINDOW_NOT_ADJUDICABLE rather than guessing.
+   Simulated exit uses observed bid. Record no-fill, spread, latency, and
+   base/stress friction; never assume a mark fill.
 7. Save trajectory events under `{trajectory_root}/` conforming
    to `config/quote_trajectory.schema.json`.
 8. Stop new MCP calls after six minutes and finish all logs within eight.

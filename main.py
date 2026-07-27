@@ -383,11 +383,51 @@ def raw_collect_command(symbol: str) -> int:
     return 0
 
 
-def market_check_verify_command(snapshot: str, output: str | None) -> int:
-    from monitoring.market_checks import to_evidence_document, verify_market_checks
+def fresh_quote_probe_command(instrument_ids: list[str]) -> int:
+    from execution.official_mcp_collector import (
+        OfficialCollectorError,
+        collect_fresh_option_quote_probe,
+    )
 
     try:
-        results = verify_market_checks(snapshot)
+        receipt = collect_fresh_option_quote_probe(instrument_ids)
+    except OfficialCollectorError as error:
+        print(json.dumps({"status": "FAILED_CLOSED", "error": str(error)}, indent=2))
+        return 1
+    print(json.dumps({
+        "status": "STORED",
+        "snapshot_id": receipt.snapshot_id,
+        "content_sha256": receipt.content_sha256,
+        "path": str(receipt.path),
+    }, indent=2, sort_keys=True))
+    return 0
+
+
+def market_check_verify_command(
+    snapshot: str,
+    output: str | None,
+    evidence_path: str | None = None,
+    fresh_quote_snapshot: str | None = None,
+) -> int:
+    from monitoring.market_checks import to_evidence_document, verify_market_checks
+
+    evidence = {}
+    if evidence_path is not None:
+        try:
+            evidence = json.loads(Path(evidence_path).read_text(encoding="utf-8"))
+            if not isinstance(evidence, dict):
+                raise ValueError("evidence file must contain a JSON object")
+        except (OSError, ValueError, json.JSONDecodeError) as error:
+            print(json.dumps({"status": "INVALID", "error": f"evidence: {error}"}, indent=2))
+            return 1
+    try:
+        results = verify_market_checks(
+            snapshot,
+            account_reconciliation=evidence.get("account_reconciliation"),
+            orders_positions_reconciliation=evidence.get("orders_positions_reconciliation"),
+            instrument_session=evidence.get("instrument_session"),
+            fresh_quote_snapshot=fresh_quote_snapshot,
+        )
     except (OSError, ValueError) as error:
         print(json.dumps({"status": "INVALID", "error": str(error)}, indent=2))
         return 1
@@ -674,6 +714,21 @@ def parse_args() -> argparse.Namespace:
     market_check_parser.add_argument(
         "--out", help="Write the evidence document (feed to shadow-readiness --market-checks)."
     )
+    market_check_parser.add_argument(
+        "--evidence",
+        help="JSON file with separately-obtained live evidence: account_reconciliation, "
+        "orders_positions_reconciliation, instrument_session (fail-closed validated).",
+    )
+    market_check_parser.add_argument(
+        "--fresh-quote-snapshot",
+        help="Vault path of a fresh-quote probe snapshot (from fresh-quote-probe) to "
+        "adjudicate fresh_option_quote at its own receipt time.",
+    )
+    probe_parser = subparsers.add_parser(
+        "fresh-quote-probe",
+        help="Store a single-call get_option_quotes probe in the vault (freshness evidence).",
+    )
+    probe_parser.add_argument("instrument_ids", nargs="+", help="1-6 option instrument ids.")
     ack_parser = subparsers.add_parser(
         "scheduler-ack", help="Atomically record proof that a scheduled task started."
     )
@@ -744,7 +799,11 @@ def main() -> int:
     if args.command == "raw-verify":
         return raw_verify_command(args.path, args.sha256)
     if args.command == "market-check-verify":
-        return market_check_verify_command(args.snapshot, args.out)
+        return market_check_verify_command(
+            args.snapshot, args.out, args.evidence, args.fresh_quote_snapshot
+        )
+    if args.command == "fresh-quote-probe":
+        return fresh_quote_probe_command(args.instrument_ids)
     if args.command == "scheduler-ack":
         return scheduler_ack_command(args.run_id, args.scheduled_for)
     if args.command == "scheduler-check":

@@ -29,6 +29,21 @@ class PromptTemplateTests(unittest.TestCase):
         template = (ROOT / "prompts/launchd_pilot_worker.md").read_text(encoding="utf-8")
         self.assertIn("Do not\ninfer the kind from the Run ID string", template)
 
+    def test_market_gate_section_uses_deterministic_adjudication_chain(self):
+        template = (ROOT / "prompts/launchd_pilot_worker.md").read_text(encoding="utf-8")
+        self.assertIn("get_equity_tradability", template)
+        self.assertIn("fresh-quote-probe", template)
+        self.assertIn("market-check-verify", template)
+        self.assertIn("--fresh-quote-snapshot", template)
+
+    def test_pilot_fill_window_is_adjudicated_within_the_run(self):
+        template = (ROOT / "prompts/launchd_pilot_worker.md").read_text(encoding="utf-8")
+        self.assertIn("adjudicated inside this same run", template)
+        self.assertIn("NO_FILL_WINDOW_EXPIRED", template)
+        self.assertIn("FILL_WINDOW_NOT_ADJUDICABLE", template)
+        # A limit met in a LATER slot must never count as a fill.
+        self.assertIn("NOT a fill", template)
+
     def test_universe_comes_from_config_not_a_hardcoded_count(self):
         # Route B (commit 9cf9f10) added SOFI/RIVN/BAC to config/universe.toml,
         # but a stale "ten-symbol" phrase in this prompt made agents evaluate

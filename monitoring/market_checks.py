@@ -170,6 +170,93 @@ def _check_fresh_option_quote(path: Path, raw_ok: bool, max_age_seconds: int) ->
     )
 
 
+def _session_result(session: Mapping[str, Any] | None) -> MarketCheckResult:
+    """Instrument-session check: UNKNOWN unless live tradability evidence is fed.
+
+    The market-data raw snapshot deliberately excludes session/tradability
+    tools, so this check can only PASS when the caller supplies evidence from a
+    live ``get_equity_tradability`` read:
+    {"active": true, "tool": "get_equity_tradability", "symbol": "SPY",
+     "evidence": ["..."]}. Anything malformed fails closed.
+    """
+
+    name = "official_instrument_session"
+    if session is None:
+        return MarketCheckResult(
+            name, CheckStatus.UNKNOWN, (),
+            "NO_OFFICIAL_SESSION_TOOL_IN_MARKET_DATA_SNAPSHOT",
+        )
+    if session.get("tool") != "get_equity_tradability":
+        return MarketCheckResult(name, CheckStatus.FAIL, (), "SESSION_EVIDENCE_WRONG_TOOL")
+    if session.get("active") is not True:
+        reason = str(session.get("reason") or "INSTRUMENT_NOT_ACTIVE")
+        return MarketCheckResult(name, CheckStatus.FAIL, (), reason)
+    evidence = session.get("evidence")
+    if not isinstance(evidence, list) or not evidence or not all(
+        isinstance(item, str) and item.strip() for item in evidence
+    ):
+        return MarketCheckResult(name, CheckStatus.FAIL, (), "SESSION_EVIDENCE_MISSING")
+    return MarketCheckResult(name, CheckStatus.PASS, tuple(evidence), None)
+
+
+def _check_fresh_quote_probe(path: Path, max_age_seconds: int) -> MarketCheckResult:
+    """Adjudicate quote freshness against a dedicated fresh-quote probe snapshot.
+
+    The full six-tool collection takes minutes, so by envelope receipt time the
+    option quotes gathered mid-run are structurally 60s+ old — a measurement
+    artifact, not market staleness. The probe is a separate vault-stored
+    snapshot containing ONLY one get_option_quotes call, collected in seconds,
+    so quote-updated-at vs received_at genuinely measures freshness. The probe
+    fails closed like everything else: an invalid/tampered probe is a FAIL,
+    never a fallback to the stale measurement.
+    """
+
+    name = "fresh_option_quote"
+    try:
+        receipt = RawDataVault.verify(path)
+    except (OSError, ValueError) as error:
+        return MarketCheckResult(name, CheckStatus.FAIL, (), f"PROBE_VERIFY_FAILED:{error}")
+    try:
+        envelope = _load_envelope(path)
+    except (OSError, json.JSONDecodeError) as error:
+        return MarketCheckResult(name, CheckStatus.FAIL, (), f"PROBE_UNREADABLE:{error}")
+    if envelope.get("source") != "ROBINHOOD_OFFICIAL_MCP":
+        return MarketCheckResult(name, CheckStatus.FAIL, (), "PROBE_SOURCE_NOT_OFFICIAL_MCP")
+    received = _received_at(envelope)
+    if received is None:
+        return MarketCheckResult(name, CheckStatus.FAIL, (), "PROBE_NO_TRUSTED_RECEIPT_TIME")
+    quote_result = next(
+        (r for r in _tool_results(envelope) if r.get("tool") == "get_option_quotes"), None
+    )
+    if quote_result is None:
+        return MarketCheckResult(name, CheckStatus.FAIL, (), "PROBE_HAS_NO_OPTION_QUOTE_RESULT")
+    text = json.dumps(quote_result.get("output"), ensure_ascii=False)
+    freshest: datetime | None = None
+    for match in _ISO_TIMESTAMP.findall(text):
+        parsed = _parse_iso_aware(match)
+        if parsed is None or parsed > received:
+            continue
+        if freshest is None or parsed > freshest:
+            freshest = parsed
+    if freshest is None:
+        return MarketCheckResult(name, CheckStatus.FAIL, (), "PROBE_NO_QUOTE_TIMESTAMP")
+    age = (received - freshest).total_seconds()
+    if age > max_age_seconds:
+        return MarketCheckResult(
+            name, CheckStatus.FAIL, (), f"QUOTE_STALE:{age:.1f}s>{max_age_seconds}s"
+        )
+    return MarketCheckResult(
+        name,
+        CheckStatus.PASS,
+        (
+            f"quote_age_seconds={age:.3f}",
+            f"quote_updated_at={freshest.isoformat()}",
+            f"probe_snapshot_id={receipt.snapshot_id}",
+        ),
+        None,
+    )
+
+
 def _domain_result(name: str, reconciliation: Mapping[str, Any] | None) -> MarketCheckResult:
     """Account/orders-positions checks: UNKNOWN unless a reconciled result is fed.
 
@@ -200,28 +287,37 @@ def verify_market_checks(
     maximum_option_quote_age_seconds: int = 10,
     account_reconciliation: Mapping[str, Any] | None = None,
     orders_positions_reconciliation: Mapping[str, Any] | None = None,
+    instrument_session: Mapping[str, Any] | None = None,
+    fresh_quote_snapshot: str | Path | None = None,
 ) -> dict[str, MarketCheckResult]:
-    """Adjudicate all six market checks deterministically from a raw snapshot."""
+    """Adjudicate all six market checks deterministically from a raw snapshot.
+
+    ``instrument_session`` and ``fresh_quote_snapshot`` follow the same pattern
+    as the account-domain reconciliations: separately-obtained live evidence
+    supplied by the caller, validated fail-closed here. Without them those two
+    checks stay UNKNOWN/stale exactly as before.
+    """
 
     path = Path(snapshot_path)
     raw = _check_raw_snapshot(path)
     raw_ok = raw.status is CheckStatus.PASS
+    if fresh_quote_snapshot is not None:
+        fresh = _check_fresh_quote_probe(
+            Path(fresh_quote_snapshot), maximum_option_quote_age_seconds
+        )
+    else:
+        fresh = _check_fresh_option_quote(path, raw_ok, maximum_option_quote_age_seconds)
     results = {
         "official_raw_mcp_snapshot": raw,
         "raw_to_feature_reproducibility": _check_reproducibility(path, raw_ok),
-        "official_instrument_session": MarketCheckResult(
-            "official_instrument_session",
-            CheckStatus.UNKNOWN,
-            (),
-            "NO_OFFICIAL_SESSION_TOOL_IN_MARKET_DATA_SNAPSHOT",
-        ),
+        "official_instrument_session": _session_result(instrument_session),
         "official_account_cash_reconciliation": _domain_result(
             "official_account_cash_reconciliation", account_reconciliation
         ),
         "official_orders_positions_reconciliation": _domain_result(
             "official_orders_positions_reconciliation", orders_positions_reconciliation
         ),
-        "fresh_option_quote": _check_fresh_option_quote(path, raw_ok, maximum_option_quote_age_seconds),
+        "fresh_option_quote": fresh,
     }
     # Guard against drift from the canonical check set.
     assert set(results) == set(MONDAY_MARKET_CHECKS)
