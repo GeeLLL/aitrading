@@ -158,6 +158,73 @@ def reconstruct_trade(events: list[dict], friction: Decimal) -> dict:
     return record
 
 
+def calibration_result(project_root: Path, day: str, friction: Decimal) -> dict:
+    """Deterministic P&L for the daily calibration trade (machinery validation).
+
+    The pilot agents write only observed quotes (entry at ask, exit at bid);
+    the arithmetic happens HERE. Calibration is excluded from all strategy
+    evidence by evidence class and never touches the policy-trade budget.
+    """
+    directory = project_root / "logs/calibration" / day
+    result: dict[str, object] = {
+        "status": "NO_ENTRY",
+        "evidence_class": "CALIBRATION_EXCLUDED_FROM_PERFORMANCE",
+        "entry": None,
+        "exit": None,
+        "gross_pnl_usd": None,
+        "friction_usd": None,
+        "net_pnl_usd": None,
+    }
+
+    def read(name: str) -> dict | None:
+        path = directory / name
+        if not path.is_file():
+            return None
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {"_unreadable": True}
+        return payload if isinstance(payload, dict) else {"_unreadable": True}
+
+    entry = read("entry.json")
+    if entry is None:
+        return result
+    if entry.get("_unreadable"):
+        result["status"] = "ENTRY_UNREADABLE"
+        return result
+    result["entry"] = {
+        key: entry.get(key)
+        for key in (
+            "run_id", "symbol", "instrument_id", "strike", "expiration_date",
+            "option_type", "delta", "premium_band", "entry_observed_at",
+            "entry_bid", "entry_ask", "entry_mark",
+        )
+    }
+    exit_record = read("exit.json")
+    if exit_record is None:
+        result["status"] = "OPEN_NOT_CLOSED"
+        return result
+    if exit_record.get("_unreadable"):
+        result["status"] = "EXIT_UNREADABLE"
+        return result
+    result["exit"] = {
+        key: exit_record.get(key)
+        for key in ("run_id", "exit_observed_at", "exit_bid", "exit_ask",
+                    "exit_mark", "holding_minutes", "exit_reason")
+    }
+    entry_ask = _decimal(entry.get("entry_ask"))
+    exit_bid = _decimal(exit_record.get("exit_bid"))
+    if entry_ask is None or exit_bid is None:
+        result["status"] = "INCOMPLETE_QUOTES"
+        return result
+    gross = (exit_bid - entry_ask) * Decimal("100")
+    result["status"] = "COMPLETED"
+    result["gross_pnl_usd"] = float(gross)
+    result["friction_usd"] = float(friction)
+    result["net_pnl_usd"] = float(gross - friction)
+    return result
+
+
 def build_report(report_date: date, *, project_root: Path = ROOT) -> dict:
     warnings: list[str] = []
     day = report_date.isoformat()
@@ -253,6 +320,7 @@ def build_report(report_date: date, *, project_root: Path = ROOT) -> dict:
             "policy": bucket_totals(policy_trades),
             "research_counterfactual": bucket_totals(research_trades),
         },
+        "calibration_trade": calibration_result(project_root, day, friction),
         "warnings": warnings,
         "evidence_class": "PILOT_EXCLUDED_FROM_PERFORMANCE",
         "caveats": [
@@ -287,6 +355,25 @@ def render_markdown(report: dict) -> str:
         f"- round-trip friction per contract: ${pnl['round_trip_friction_usd']:.2f} ({pnl['friction_model']})",
         "",
     ]
+    calibration = report.get("calibration_trade") or {}
+    lines.append("## Calibration trade (machinery validation — excluded from performance)")
+    lines.append("")
+    if calibration.get("status") == "COMPLETED":
+        entry = calibration.get("entry") or {}
+        exit_record = calibration.get("exit") or {}
+        lines.append(
+            f"- **{calibration['status']}** {entry.get('symbol')} {entry.get('option_type')} "
+            f"{entry.get('strike')} exp {entry.get('expiration_date')} (band ${entry.get('premium_band')}): "
+            f"entry ask {entry.get('entry_ask')} → exit bid {exit_record.get('exit_bid')} "
+            f"({exit_record.get('holding_minutes')} min, {exit_record.get('exit_reason')})"
+        )
+        lines.append(
+            f"- gross ${calibration['gross_pnl_usd']:.2f} − friction ${calibration['friction_usd']:.2f} "
+            f"= **net ${calibration['net_pnl_usd']:.2f}**"
+        )
+    else:
+        lines.append(f"- status: **{calibration.get('status', 'NO_ENTRY')}**")
+    lines.append("")
     failing = [slot for slot in coverage["slots"] if slot["status"] not in ("COMPLETED", None)]
     if failing:
         lines.append("## Slots needing attention")

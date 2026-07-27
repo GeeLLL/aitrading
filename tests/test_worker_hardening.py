@@ -44,6 +44,16 @@ class PromptTemplateTests(unittest.TestCase):
         # A limit met in a LATER slot must never count as a fill.
         self.assertIn("NOT a fill", template)
 
+    def test_calibration_trade_is_isolated_from_strategy_evidence(self):
+        template = (ROOT / "prompts/launchd_pilot_worker.md").read_text(encoding="utf-8")
+        self.assertIn("CALIBRATION_EXCLUDED_FROM_PERFORMANCE", template)
+        self.assertIn("never consumes the one-per-day policy-trade budget", template)
+        self.assertIn("Never compute P&L\n  yourself", template)
+        self.assertIn("Never overwrite an existing entry", template)
+        # Entry unconditional at ask; exit at bid — machinery, not selectivity.
+        self.assertIn("AT THE OBSERVED ASK", template)
+        self.assertIn("OBSERVED BID", template)
+
     def test_universe_comes_from_config_not_a_hardcoded_count(self):
         # Route B (commit 9cf9f10) added SOFI/RIVN/BAC to config/universe.toml,
         # but a stale "ten-symbol" phrase in this prompt made agents evaluate

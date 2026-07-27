@@ -86,6 +86,38 @@ For a PILOT_SAMPLE run:
    to `config/quote_trajectory.schema.json`.
 8. Stop new MCP calls after six minutes and finish all logs within eight.
 
+Daily calibration trade (machinery validation — NEVER strategy evidence, and
+it never consumes the one-per-day policy-trade budget):
+
+- Purpose: guarantee one complete virtual fill lifecycle per market day so
+  the entry/exit/friction/P&L machinery is exercised with real quotes even
+  on NO_TRADE days. Every calibration record carries evidence_class
+  `CALIBRATION_EXCLUDED_FROM_PERFORMANCE`.
+- ENTRY — if `logs/calibration/<date>/entry.json` does not exist, this slot
+  is 11:03 or earlier, and at least 3 minutes of the MCP budget remain
+  (otherwise defer to the next slot and note the deferral in your summary):
+  select the calibration contract by this exact deterministic rule: the
+  universe symbol with the highest volume_ratio this run (no signal
+  requirement), its 7-21 DTE expiration nearest 14 days, the contract with
+  |delta| in [0.30, 0.65] closest to 0.50 (tie: higher open interest),
+  preferring premium (mark x 100) at or under $75, else $120, else $300;
+  if that symbol has none at or under $300, move to the next-highest
+  volume_ratio symbol. Record a simulated entry AT THE OBSERVED ASK
+  (unconditional — calibration measures machinery, not selectivity) by
+  writing `logs/calibration/<date>/entry.json` with exactly: schema_version
+  1, run_id, symbol, instrument_id, strike, expiration_date, option_type,
+  delta, implied_volatility, volume, open_interest, premium_band (75, 120,
+  or 300), entry_observed_at, entry_bid, entry_ask, entry_mark,
+  source_updated_at, evidence_class. Never overwrite an existing entry.
+- EXIT — if an entry exists and `logs/calibration/<date>/exit.json` does
+  not: when at least 40 minutes have passed since entry_observed_at, OR
+  this is the 11:23 slot (last pilot slot), refresh that exact instrument's
+  quote and write exit.json with exactly: schema_version 1, run_id,
+  exit_observed_at, exit_bid, exit_ask, exit_mark, holding_minutes,
+  exit_reason ("HORIZON_40_MIN" or "FORCED_LAST_PILOT_SLOT"),
+  evidence_class. The exit uses the OBSERVED BID. Never compute P&L
+  yourself — deterministic local code adjudicates it at close.
+
 For a CLOSE_SUMMARY run, use local logs only, exclude Pilot/Drill data from
 formal performance, report missing schedules and incomplete trajectories, and
 do not backfill market data.

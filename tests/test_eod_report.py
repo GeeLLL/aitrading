@@ -107,6 +107,69 @@ class ReconstructTradeTests(unittest.TestCase):
         self.assertEqual(trade["outcome"], "NO_LIMIT_PRICE")
 
 
+class CalibrationTradeTests(unittest.TestCase):
+    def _write(self, root: Path, name: str, payload: dict) -> None:
+        directory = root / "logs/calibration/2026-07-28"
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / name).write_text(json.dumps(payload), encoding="utf-8")
+
+    def test_no_entry_is_reported_not_invented(self):
+        from scripts.eod_report import calibration_result
+        with TemporaryDirectory() as tmp:
+            result = calibration_result(Path(tmp), "2026-07-28", FRICTION)
+        self.assertEqual(result["status"], "NO_ENTRY")
+        self.assertIsNone(result["net_pnl_usd"])
+        self.assertEqual(result["evidence_class"], "CALIBRATION_EXCLUDED_FROM_PERFORMANCE")
+
+    def test_open_position_without_exit_is_flagged(self):
+        from scripts.eod_report import calibration_result
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write(root, "entry.json", {"schema_version": 1, "symbol": "SOFI", "entry_ask": 0.70})
+            result = calibration_result(root, "2026-07-28", FRICTION)
+        self.assertEqual(result["status"], "OPEN_NOT_CLOSED")
+        self.assertIsNone(result["net_pnl_usd"])
+
+    def test_completed_lifecycle_computes_deterministic_net(self):
+        from scripts.eod_report import calibration_result
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write(root, "entry.json", {
+                "schema_version": 1, "symbol": "SOFI", "premium_band": 75,
+                "entry_ask": 0.70, "entry_bid": 0.66, "entry_mark": 0.68,
+            })
+            self._write(root, "exit.json", {
+                "schema_version": 1, "exit_bid": 0.75, "holding_minutes": 42,
+                "exit_reason": "HORIZON_40_MIN",
+            })
+            result = calibration_result(root, "2026-07-28", FRICTION)
+        self.assertEqual(result["status"], "COMPLETED")
+        # gross = (0.75 - 0.70) * 100 = 5.00 ; net = 5.00 - 1.40 = 3.60
+        self.assertAlmostEqual(result["gross_pnl_usd"], 5.00)
+        self.assertAlmostEqual(result["net_pnl_usd"], 3.60)
+
+    def test_losing_calibration_still_subtracts_friction(self):
+        from scripts.eod_report import calibration_result
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write(root, "entry.json", {"schema_version": 1, "entry_ask": 0.70})
+            self._write(root, "exit.json", {"schema_version": 1, "exit_bid": 0.60})
+            result = calibration_result(root, "2026-07-28", FRICTION)
+        # gross = -10.00 ; net = -11.40
+        self.assertAlmostEqual(result["net_pnl_usd"], -11.40)
+
+    def test_corrupt_files_fail_closed(self):
+        from scripts.eod_report import calibration_result
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            directory = root / "logs/calibration/2026-07-28"
+            directory.mkdir(parents=True)
+            (directory / "entry.json").write_text("{broken", encoding="utf-8")
+            result = calibration_result(root, "2026-07-28", FRICTION)
+        self.assertEqual(result["status"], "ENTRY_UNREADABLE")
+        self.assertIsNone(result["net_pnl_usd"])
+
+
 class LoadTrajectoriesTests(unittest.TestCase):
     def test_malformed_files_become_warnings_not_crashes(self):
         with TemporaryDirectory() as tmp:
