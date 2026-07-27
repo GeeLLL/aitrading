@@ -32,6 +32,16 @@ LOCAL = SESSION_TIMEZONE
 LOCK_PATH = ROOT / "logs/scheduler/launchd-shadow-worker.lock"
 SLOTS = DAILY_SLOTS
 
+# In-slot retry budgets. Retrying INSIDE the already-acked slot is not backfill:
+# the fire passed the 180s freshness guard and the retry never extends past the
+# slot's own execution window (slots are >= 1200s apart; worst case below stays
+# well under that). The budgets exist so a retry can never collide with the
+# next slot.
+CANARY_RETRY_ELAPSED_CAP_SECONDS = 420   # no 2nd canary attempt after this
+PILOT_FAST_FAILURE_SECONDS = 240         # pilot retry only if attempt 1 died faster than this
+PILOT_RETRY_TIMEOUT_SECONDS = 480        # and the retry itself gets a tighter cap
+PILOT_TIMEOUT_SECONDS = 720
+
 # The pilot agent needs read-only Robinhood MCP tools plus the ability to run
 # the project's deterministic CLI and write its own logs inside the workspace.
 # Everything else stays denied by Claude Code's print-mode default.
@@ -125,23 +135,41 @@ def _safety_ok(incident_directory: Path = ROOT / "logs/incidents") -> tuple[bool
     return valid, status
 
 
+def _rebuild_dashboard() -> None:
+    subprocess.run(
+        [sys.executable, str(ROOT / "scripts/build_shadow_dashboard.py")],
+        cwd=ROOT,
+        timeout=30,
+        check=False,
+    )
+
+
 def _run_canary(run_id: str, symbol: str, ack_path: Path, log_root: Path) -> int:
     """Exercise launchd -> official read-only MCP -> immutable local evidence."""
     summary_path = log_root / f"{run_id}.json"
     started = datetime.now(timezone.utc)
-    try:
-        # Read-only canary: degrade gracefully if one large tool overflows the
-        # harness cap, so a single bad tool never zeroes the snapshot. Any partial
-        # result is marked in the vault envelope and stays excluded from evidence.
-        receipt = collect_official_raw_snapshot(symbol, project_root=ROOT, resilient=True)
-        verified = RawDataVault.verify(receipt.path, receipt.content_sha256)
-        result_status = "COMPLETED"
-        failure_reason = None
-    except (OfficialCollectorError, ValueError) as error:
-        receipt = None
-        verified = None
-        result_status = "FAILED_CLOSED"
-        failure_reason = f"{type(error).__name__}: {error}"
+    # Bounded in-slot retry: a transient CLI/stream failure gets one more
+    # attempt while still comfortably inside this slot's execution window.
+    receipt = None
+    verified = None
+    attempts = 0
+    attempt_errors: list[str] = []
+    for attempt in (1, 2):
+        attempts = attempt
+        try:
+            # Read-only canary: degrade gracefully if one large tool overflows the
+            # harness cap, so a single bad tool never zeroes the snapshot. Any partial
+            # result is marked in the vault envelope and stays excluded from evidence.
+            receipt = collect_official_raw_snapshot(symbol, project_root=ROOT, resilient=True)
+            verified = RawDataVault.verify(receipt.path, receipt.content_sha256)
+            break
+        except (OfficialCollectorError, ValueError) as error:
+            attempt_errors.append(f"attempt {attempt}: {type(error).__name__}: {error}")
+            elapsed = (datetime.now(timezone.utc) - started).total_seconds()
+            if elapsed > CANARY_RETRY_ELAPSED_CAP_SECONDS:
+                break
+    result_status = "COMPLETED" if verified else "FAILED_CLOSED"
+    failure_reason = None if verified else "; ".join(attempt_errors) or None
     ended = datetime.now(timezone.utc)
     _atomic_json(summary_path, {
         "schema_version": 1,
@@ -153,6 +181,7 @@ def _run_canary(run_id: str, symbol: str, ack_path: Path, log_root: Path) -> int
         "started_at": started.isoformat(),
         "ended_at": ended.isoformat(),
         "duration_seconds": (ended - started).total_seconds(),
+        "attempts": attempts,
         "snapshot_path": str(verified.path) if verified else None,
         "snapshot_sha256": verified.content_sha256 if verified else None,
         "failure_reason": failure_reason,
@@ -161,13 +190,163 @@ def _run_canary(run_id: str, symbol: str, ack_path: Path, log_root: Path) -> int
         "order_tools_enabled": False,
         "evidence_class": "PILOT_EXCLUDED_FROM_PERFORMANCE",
     })
-    subprocess.run(
-        [sys.executable, str(ROOT / "scripts/build_shadow_dashboard.py")],
-        cwd=ROOT,
-        timeout=30,
-        check=False,
-    )
+    _rebuild_dashboard()
     return 0 if verified else 2
+
+
+def _run_agent_once(
+    command: list[str],
+    prompt: str,
+    stdout_path: Path,
+    stderr_path: Path,
+    timeout_seconds: int,
+    attempt: int,
+) -> tuple[int, bool]:
+    """Run one Claude CLI attempt. Returns (return_code, timed_out).
+
+    Output is APPENDED with an attempt banner so a retry can never destroy the
+    evidence of the first attempt (the old code truncated stderr on timeout).
+    """
+    banner = f"\n===== attempt {attempt} @ {datetime.now(timezone.utc).isoformat()} =====\n"
+    with stdout_path.open("a", encoding="utf-8") as stdout, stderr_path.open("a", encoding="utf-8") as stderr:
+        stdout.write(banner)
+        stderr.write(banner)
+        stdout.flush()
+        stderr.flush()
+        try:
+            completed = subprocess.run(
+                command,
+                input=prompt,
+                text=True,
+                cwd=ROOT,
+                stdout=stdout,
+                stderr=stderr,
+                timeout=timeout_seconds,
+                check=False,
+            )
+            return completed.returncode, False
+        except subprocess.TimeoutExpired:
+            stderr.write(f"TimeoutExpired after {timeout_seconds}s\n")
+            return 2, True
+        except OSError as error:
+            stderr.write(f"{type(error).__name__}: {error}\n")
+            return 2, False
+
+
+def _execute_slot(
+    *,
+    run_id: str,
+    kind: str,
+    symbol: str,
+    scheduled: datetime,
+    now: datetime,
+    ack_path: Path,
+    log_root: Path,
+    summary_path: Path,
+) -> int:
+    safe, safety = _safety_ok()
+    if not safe:
+        _atomic_json(summary_path, {
+            "status": "SAFETY_GATE_FAILED",
+            "run_id": run_id,
+            "safety": safety,
+        })
+        return 2
+
+    if kind == "CANARY":
+        return _run_canary(run_id, symbol, ack_path, log_root)
+
+    prompt = (ROOT / "prompts/launchd_pilot_worker.md").read_text(encoding="utf-8").format(
+        run_id=run_id,
+        kind=kind,
+        scheduled_for=scheduled.isoformat(),
+        symbol=symbol,
+        log_root=str(log_root),
+        trajectory_root=str(ROOT / "logs/quote_trajectories" / now.astimezone(LOCAL).date().isoformat()),
+    )
+    stdout_path = log_root / f"{run_id}.stdout.jsonl"
+    stderr_path = log_root / f"{run_id}.stderr.log"
+    try:
+        command = [
+            claude_binary(), "-p",
+            "--output-format", "stream-json", "--verbose",
+            "--allowedTools", PILOT_ALLOWED_TOOLS,
+        ]
+    except OfficialCollectorError as error:
+        _atomic_json(summary_path, {
+            "status": "CLAUDE_CLI_NOT_FOUND",
+            "run_id": run_id,
+            "reason": str(error),
+            "ack_path": str(ack_path),
+        })
+        return 2
+
+    started = datetime.now(timezone.utc)
+    return_code, timed_out = _run_agent_once(
+        command, prompt, stdout_path, stderr_path, PILOT_TIMEOUT_SECONDS, attempt=1,
+    )
+    attempts = 1
+    elapsed = (datetime.now(timezone.utc) - started).total_seconds()
+    if return_code != 0 and not timed_out and elapsed < PILOT_FAST_FAILURE_SECONDS:
+        # Fast failure = CLI startup/auth/transport problem, not a long agent
+        # run. One tighter-capped retry still fits inside this slot's window.
+        attempts = 2
+        return_code, timed_out = _run_agent_once(
+            command, prompt, stdout_path, stderr_path, PILOT_RETRY_TIMEOUT_SECONDS, attempt=2,
+        )
+
+    if return_code == 0:
+        # Exit code 0 alone is not completion: the agent must have written its
+        # own terminal summary (the prompt names the exact path). This catches
+        # "CLI exited clean but did nothing" — e.g. every MCP call errored.
+        agent_summary = log_root / f"{run_id}.summary.json"
+        if agent_summary.is_file():
+            result_status = "COMPLETED"
+        else:
+            result_status = "COMPLETED_NO_AGENT_SUMMARY"
+            return_code = 2
+    elif timed_out:
+        result_status = "AGENT_TIMEOUT_OR_START_FAILURE"
+    else:
+        result_status = "AGENT_FAILED"
+
+    ended = datetime.now(timezone.utc)
+    _atomic_json(summary_path, {
+        "schema_version": 1,
+        "status": result_status,
+        "run_id": run_id,
+        "kind": kind,
+        "symbol": symbol,
+        "scheduled_for": scheduled.astimezone(timezone.utc).isoformat(),
+        "ack_path": str(ack_path),
+        "started_at": started.isoformat(),
+        "ended_at": ended.isoformat(),
+        "duration_seconds": (ended - started).total_seconds(),
+        "attempts": attempts,
+        "agent_runtime": "CLAUDE_CODE_CLI",
+        "agent_return_code": return_code,
+        "read_only": True,
+        "live_trading_enabled": False,
+        "order_tools_enabled": False,
+        "evidence_class": "PILOT_EXCLUDED_FROM_PERFORMANCE",
+    })
+
+    if kind == "CLOSE_SUMMARY":
+        # Deterministic end-of-day report: runs regardless of how the agent
+        # fared, so the day always ends with an auditable P&L/coverage record.
+        subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / "scripts/eod_report.py"),
+                "--date", now.astimezone(LOCAL).date().isoformat(),
+            ],
+            cwd=ROOT,
+            timeout=120,
+            check=False,
+        )
+
+    _rebuild_dashboard()
+    return 0 if return_code == 0 else 2
 
 
 def main() -> int:
@@ -209,88 +388,34 @@ def main() -> int:
                 "run_id": run_id,
                 "ack_path": str(ack_path),
             })
-            return 0
-
-        safe, safety = _safety_ok()
-        if not safe:
-            _atomic_json(summary_path, {
-                "status": "SAFETY_GATE_FAILED",
-                "run_id": run_id,
-                "safety": safety,
-            })
             return 2
 
-        if kind == "CANARY":
-            return _run_canary(run_id, symbol, ack_path, log_root)
-
-        prompt = (ROOT / "prompts/launchd_pilot_worker.md").read_text(encoding="utf-8").format(
-            run_id=run_id,
-            scheduled_for=scheduled.isoformat(),
-            symbol=symbol,
-            log_root=str(log_root),
-            trajectory_root=str(ROOT / "logs/quote_trajectories" / now.date().isoformat()),
-        )
-        stdout_path = log_root / f"{run_id}.stdout.jsonl"
-        stderr_path = log_root / f"{run_id}.stderr.log"
-        try:
-            command = [
-                claude_binary(), "-p",
-                "--output-format", "stream-json", "--verbose",
-                "--allowedTools", PILOT_ALLOWED_TOOLS,
-            ]
-        except OfficialCollectorError as error:
-            _atomic_json(summary_path, {
-                "status": "CLAUDE_CLI_NOT_FOUND",
-                "run_id": run_id,
-                "reason": str(error),
-                "ack_path": str(ack_path),
-            })
-            return 2
-        started = datetime.now(timezone.utc)
-        try:
-            with stdout_path.open("w", encoding="utf-8") as stdout, stderr_path.open("w", encoding="utf-8") as stderr:
-                completed = subprocess.run(
-                    command,
-                    input=prompt,
-                    text=True,
-                    cwd=ROOT,
-                    stdout=stdout,
-                    stderr=stderr,
-                    timeout=720,
-                    check=False,
-                )
-            result_status = "COMPLETED" if completed.returncode == 0 else "AGENT_FAILED"
-            return_code = completed.returncode
-        except (OSError, subprocess.TimeoutExpired) as error:
-            result_status = "AGENT_TIMEOUT_OR_START_FAILURE"
-            return_code = 2
-            stderr_path.write_text(type(error).__name__ + "\n", encoding="utf-8")
-        ended = datetime.now(timezone.utc)
-        _atomic_json(summary_path, {
+        # PID record: lets the independent watchdog detect and kill a hung
+        # worker (which would otherwise hold the flock and silently starve
+        # every later slot). Removed on any exit; the watchdog treats a stale
+        # record whose summary exists as already-finished.
+        pid_path = ROOT / f"logs/scheduler/{run_id}.pid"
+        _atomic_json(pid_path, {
             "schema_version": 1,
-            "status": result_status,
+            "pid": os.getpid(),
             "run_id": run_id,
             "kind": kind,
-            "symbol": symbol,
-            "scheduled_for": scheduled.astimezone(timezone.utc).isoformat(),
-            "ack_path": str(ack_path),
-            "started_at": started.isoformat(),
-            "ended_at": ended.isoformat(),
-            "duration_seconds": (ended - started).total_seconds(),
-            "agent_runtime": "CLAUDE_CODE_CLI",
-            "agent_return_code": return_code,
-            "read_only": True,
-            "live_trading_enabled": False,
-            "order_tools_enabled": False,
-            "evidence_class": "PILOT_EXCLUDED_FROM_PERFORMANCE",
+            "started_at": now.astimezone(timezone.utc).isoformat(),
+            "summary_path": str(summary_path),
         })
-        subprocess.run(
-            [sys.executable, str(ROOT / "scripts/build_shadow_dashboard.py")],
-            cwd=ROOT,
-            timeout=30,
-            check=False,
-        )
-        return 0 if return_code == 0 else 2
+        try:
+            return _execute_slot(
+                run_id=run_id,
+                kind=kind,
+                symbol=symbol,
+                scheduled=scheduled,
+                now=now,
+                ack_path=ack_path,
+                log_root=log_root,
+                summary_path=summary_path,
+            )
+        finally:
+            pid_path.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

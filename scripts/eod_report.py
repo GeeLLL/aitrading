@@ -1,0 +1,338 @@
+#!/usr/bin/env python3
+"""Deterministic end-of-day report: slot coverage + simulated P&L.
+
+Aggregates what the day's launchd slots actually produced — worker summaries,
+agent decision files, and quote-trajectory events — into one auditable record:
+
+    logs/eod/<date>.pnl.json     (machine-readable)
+    logs/eod/<date>.report.md    (human-readable)
+
+P&L is recomputed HERE, deterministically, from observed trajectory events
+using the same friction semantics as strategy/shadow_runner.py (per-contract
+fee x2 + regulatory exit fee + exit slippage ticks). LLM-written arithmetic is
+never trusted for the headline number.
+
+Read-only over local logs. Never contacts the market, never backfills: a slot
+with no data is reported as missing, not repaired. Every figure is stamped
+PILOT_EXCLUDED_FROM_PERFORMANCE — this report is operational visibility, not
+strategy performance evidence.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import tomllib
+from datetime import date, datetime
+from decimal import Decimal
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from monitoring.daily_schedule import SESSION_TIMEZONE, expected_runs_for_date
+
+POLICY_LABELS = {"BASE_25", "BASE_30", "AI_RANK_V1"}
+SUCCESS_STATUSES = {"COMPLETED"}
+
+
+def _decimal(value: object) -> Decimal | None:
+    if value is None:
+        return None
+    try:
+        return Decimal(str(value))
+    except (ArithmeticError, ValueError, TypeError):
+        return None
+
+
+def round_trip_friction_usd(safety_config: dict) -> Decimal:
+    """Single-contract round-trip friction, identical to shadow_runner semantics."""
+    model = safety_config["friction_model"]
+    per_contract = Decimal(str(model["per_contract_fee_usd"]))
+    regulatory_exit = Decimal(str(model["regulatory_exit_fee_usd"]))
+    slippage_ticks = Decimal(str(model["exit_latency_slippage_ticks"]))
+    tick_size = Decimal(str(model["option_tick_size_usd"]))
+    return per_contract * Decimal("2") + regulatory_exit + slippage_ticks * tick_size * Decimal("100")
+
+
+def load_trajectories(trajectory_dir: Path, warnings: list[str]) -> dict[str, list[dict]]:
+    """Group trajectory event payloads by trajectory_id. Malformed files are
+    recorded as warnings, never fatal."""
+    groups: dict[str, list[dict]] = {}
+    if not trajectory_dir.is_dir():
+        return groups
+    for path in sorted(trajectory_dir.glob("*.json")):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            warnings.append(f"UNREADABLE_TRAJECTORY_FILE:{path.name}")
+            continue
+        if not isinstance(payload, dict):
+            warnings.append(f"NON_OBJECT_TRAJECTORY_FILE:{path.name}")
+            continue
+        trajectory_id = str(payload.get("trajectory_id") or "")
+        if not trajectory_id:
+            warnings.append(f"MISSING_TRAJECTORY_ID:{path.name}")
+            continue
+        groups.setdefault(trajectory_id, []).append(payload)
+    return groups
+
+
+def reconstruct_trade(events: list[dict], friction: Decimal) -> dict:
+    """Deterministically replay one trajectory's events into a virtual-trade record.
+
+    Entry rule (mirrors the pilot prompt): a simulated entry exists only if a
+    LATER observed QUOTE has ask <= the candidate's recorded ask (the limit).
+    Exit uses the HORIZON_CLOSE observed bid. Anything unknowable stays null.
+    """
+    candidates = [event for event in events if event.get("event_type") == "CANDIDATE"]
+    quotes = [event for event in events if event.get("event_type") == "QUOTE"]
+    closes = [event for event in events if event.get("event_type") == "HORIZON_CLOSE"]
+    candidate = candidates[0] if candidates else None
+
+    record: dict[str, object] = {
+        "trajectory_id": events[0].get("trajectory_id"),
+        "underlying": events[0].get("underlying"),
+        "option_type": events[0].get("option_type"),
+        "strike": events[0].get("strike"),
+        "expiration_date": events[0].get("expiration_date"),
+        "policy_labels": sorted({
+            str(label)
+            for event in events
+            for label in (event.get("policy_labels") or [])
+        }),
+        "rejected": None,
+        "rejection_reasons": [],
+        "outcome": "NO_CANDIDATE_EVENT",
+        "entry_limit": None,
+        "entry_fill": None,
+        "exit_bid": None,
+        "gross_pnl_usd": None,
+        "friction_usd": None,
+        "net_pnl_usd": None,
+    }
+    if candidate is None:
+        return record
+
+    reasons = [str(reason) for reason in (candidate.get("rejection_reasons") or [])]
+    record["rejected"] = bool(reasons)
+    record["rejection_reasons"] = reasons
+    if reasons:
+        record["outcome"] = "REJECTED_NO_TRADE"
+        return record
+
+    limit = _decimal(candidate.get("ask"))
+    record["entry_limit"] = None if limit is None else float(limit)
+    if limit is None:
+        record["outcome"] = "NO_LIMIT_PRICE"
+        return record
+
+    candidate_time = str(candidate.get("quote_received_at") or "")
+    fill = None
+    for quote in sorted(quotes, key=lambda event: str(event.get("quote_received_at") or "")):
+        if str(quote.get("quote_received_at") or "") <= candidate_time:
+            continue
+        ask = _decimal(quote.get("ask"))
+        if ask is not None and ask <= limit:
+            fill = ask
+            break
+    if fill is None:
+        record["outcome"] = "NO_FILL"
+        return record
+    record["entry_fill"] = float(fill)
+
+    exit_bid = _decimal(closes[0].get("bid")) if closes else None
+    if exit_bid is None:
+        record["outcome"] = "FILLED_NO_HORIZON_CLOSE"
+        return record
+    record["exit_bid"] = float(exit_bid)
+
+    gross = (exit_bid - fill) * Decimal("100")
+    net = gross - friction
+    record["outcome"] = "FILLED_AND_EXITED"
+    record["gross_pnl_usd"] = float(gross)
+    record["friction_usd"] = float(friction)
+    record["net_pnl_usd"] = float(net)
+    return record
+
+
+def build_report(report_date: date, *, project_root: Path = ROOT) -> dict:
+    warnings: list[str] = []
+    day = report_date.isoformat()
+
+    with (project_root / "config/safety.toml").open("rb") as handle:
+        safety_config = tomllib.load(handle)
+    friction = round_trip_friction_usd(safety_config)
+
+    # --- Slot coverage -----------------------------------------------------
+    worker_dir = project_root / "logs/launchd_worker" / day
+    ack_dir = project_root / "logs/scheduler"
+    slots = []
+    completed = failed = missed = 0
+    for run_id, scheduled_for in expected_runs_for_date(report_date):
+        ack_exists = (ack_dir / f"{run_id}.start.json").is_file()
+        summary_path = worker_dir / f"{run_id}.json"
+        status = None
+        if summary_path.is_file():
+            try:
+                payload = json.loads(summary_path.read_text(encoding="utf-8"))
+                status = str(payload.get("status") or "UNKNOWN")
+            except (OSError, json.JSONDecodeError):
+                status = "UNREADABLE_SUMMARY"
+        if status in SUCCESS_STATUSES:
+            completed += 1
+        elif status is None and not ack_exists:
+            missed += 1
+        else:
+            failed += 1
+        slots.append({
+            "run_id": run_id,
+            "scheduled_for": scheduled_for.isoformat(),
+            "ack": ack_exists,
+            "status": status,
+        })
+
+    # --- Agent decisions (best effort, informational) -----------------------
+    decisions = []
+    if worker_dir.is_dir():
+        for path in sorted(worker_dir.glob("*.decision.json")):
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                warnings.append(f"UNREADABLE_DECISION_FILE:{path.name}")
+                continue
+            if isinstance(payload, dict):
+                decisions.append({"file": path.name, **{
+                    key: payload.get(key)
+                    for key in ("run_id", "decision", "symbol", "reason", "action")
+                    if key in payload
+                }})
+
+    # --- Virtual trades from trajectories (deterministic P&L) ---------------
+    trajectory_dir = project_root / "logs/quote_trajectories" / day
+    groups = load_trajectories(trajectory_dir, warnings)
+    trades = [reconstruct_trade(events, friction) for events in groups.values()]
+    trades.sort(key=lambda trade: str(trade.get("trajectory_id")))
+
+    def is_policy(trade: dict) -> bool:
+        return bool(POLICY_LABELS.intersection(trade.get("policy_labels") or []))
+
+    policy_trades = [trade for trade in trades if is_policy(trade)]
+    research_trades = [trade for trade in trades if not is_policy(trade)]
+
+    def bucket_totals(bucket: list[dict]) -> dict:
+        realized = [trade for trade in bucket if trade["net_pnl_usd"] is not None]
+        return {
+            "trajectories": len(bucket),
+            "filled_and_exited": len(realized),
+            "gross_pnl_usd": float(sum(Decimal(str(trade["gross_pnl_usd"])) for trade in realized)) if realized else 0.0,
+            "net_pnl_usd": float(sum(Decimal(str(trade["net_pnl_usd"])) for trade in realized)) if realized else 0.0,
+        }
+
+    return {
+        "schema_version": 1,
+        "date": day,
+        "generated_at": datetime.now(SESSION_TIMEZONE).isoformat(),
+        "slot_coverage": {
+            "expected": len(slots),
+            "completed": completed,
+            "failed": failed,
+            "missed": missed,
+            "slots": slots,
+        },
+        "decisions": decisions,
+        "virtual_trades": {
+            "policy": policy_trades,
+            "research_counterfactual": research_trades,
+        },
+        "pnl": {
+            "friction_model": "CONSERVATIVE_UNCALIBRATED",
+            "round_trip_friction_usd": float(friction),
+            "policy": bucket_totals(policy_trades),
+            "research_counterfactual": bucket_totals(research_trades),
+        },
+        "warnings": warnings,
+        "evidence_class": "PILOT_EXCLUDED_FROM_PERFORMANCE",
+        "caveats": [
+            "Simulated P&L from observed read-only quotes; no orders were placed.",
+            "Pilot data is excluded from formal strategy performance by design.",
+            "Missing slots are reported, never backfilled.",
+        ],
+    }
+
+
+def render_markdown(report: dict) -> str:
+    coverage = report["slot_coverage"]
+    pnl = report["pnl"]
+    lines = [
+        f"# End-of-day report — {report['date']}",
+        "",
+        f"*Generated {report['generated_at']} — {report['evidence_class']}*",
+        "",
+        "## Slot coverage",
+        "",
+        f"- expected: **{coverage['expected']}**",
+        f"- completed: **{coverage['completed']}**",
+        f"- failed: **{coverage['failed']}**",
+        f"- missed: **{coverage['missed']}**",
+        "",
+        "## Simulated P&L (deterministic, friction-adjusted)",
+        "",
+        f"- policy trades net: **${pnl['policy']['net_pnl_usd']:.2f}** "
+        f"({pnl['policy']['filled_and_exited']} filled/exited of {pnl['policy']['trajectories']} trajectories)",
+        f"- research counterfactual net: ${pnl['research_counterfactual']['net_pnl_usd']:.2f} "
+        f"({pnl['research_counterfactual']['filled_and_exited']} filled/exited of {pnl['research_counterfactual']['trajectories']})",
+        f"- round-trip friction per contract: ${pnl['round_trip_friction_usd']:.2f} ({pnl['friction_model']})",
+        "",
+    ]
+    failing = [slot for slot in coverage["slots"] if slot["status"] not in ("COMPLETED", None)]
+    if failing:
+        lines.append("## Slots needing attention")
+        lines.append("")
+        for slot in failing:
+            lines.append(f"- `{slot['run_id']}` — {slot['status']}")
+        lines.append("")
+    if report["warnings"]:
+        lines.append("## Warnings")
+        lines.append("")
+        for warning in report["warnings"]:
+            lines.append(f"- {warning}")
+        lines.append("")
+    for caveat in report["caveats"]:
+        lines.append(f"> {caveat}")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def write_report(report_date: date, *, project_root: Path = ROOT) -> Path:
+    report = build_report(report_date, project_root=project_root)
+    out_dir = project_root / "logs/eod"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    json_path = out_dir / f"{report_date.isoformat()}.pnl.json"
+    temporary = json_path.with_suffix(".json.tmp")
+    temporary.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    temporary.replace(json_path)
+    (out_dir / f"{report_date.isoformat()}.report.md").write_text(
+        render_markdown(report), encoding="utf-8",
+    )
+    return json_path
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--date", default=None, help="Session date YYYY-MM-DD (default: today PT)")
+    args = parser.parse_args()
+    report_date = (
+        date.fromisoformat(args.date)
+        if args.date
+        else datetime.now(SESSION_TIMEZONE).date()
+    )
+    path = write_report(report_date)
+    print(json.dumps({"status": "WRITTEN", "path": str(path)}))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

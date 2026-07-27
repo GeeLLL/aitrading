@@ -43,9 +43,11 @@ GRACE_SECONDS = 120
 # collection did NOT succeed. This is how a systemic outage that still "starts"
 # every slot — a dead MCP OAuth, a missing/expired Claude CLI, a network drop —
 # shows up as DEGRADED instead of a day that looks fully healthy because 17 acks
-# exist. "COMPLETED" and the benign "OVERLAP_SKIPPED" are the only non-failures;
-# an unknown status is treated as a failure (fail toward visible).
-_SUCCESS_STATUSES = frozenset({"COMPLETED", "OVERLAP_SKIPPED"})
+# exist. "COMPLETED" is the ONLY non-failure; an unknown status is treated as a
+# failure (fail toward visible). OVERLAP_SKIPPED is deliberately a failure: it
+# means the slot's sample was lost because an earlier worker still held the
+# lock — a hung-worker day previously looked fully healthy through 16 of these.
+_SUCCESS_STATUSES = frozenset({"COMPLETED"})
 
 
 @dataclass(frozen=True)
