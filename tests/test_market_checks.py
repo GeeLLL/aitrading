@@ -334,3 +334,106 @@ class MarketChecksReadinessIntegrationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def _store_session_probe(root: Path, *, received: datetime, symbol: str = "SPY",
+                         tradability: str = "tradable", state: str = "active") -> Path:
+    receipt = RawDataVault(root).store(
+        source="ROBINHOOD_OFFICIAL_MCP",
+        request={
+            "schema_version": 1,
+            "transport": "CLAUDE_STREAM_JSON_HARVEST",
+            "probe": "INSTRUMENT_TRADABILITY",
+            "symbol": symbol,
+            "tool_calls": [],
+        },
+        response={"tool_results": [{
+            "tool": "get_equity_tradability",
+            "output": {"data": {"tradability": tradability, "state": state}},
+        }]},
+        source_updated_at=received - timedelta(seconds=1),
+        received_at=received,
+    )
+    return receipt.path
+
+
+class SessionProbeTests(unittest.TestCase):
+    """The instrument-session check used to PASS on a string the agent typed.
+    Harvested evidence must be required and replay-proof, like the quote probe."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.now = datetime(2026, 7, 28, 14, 0, tzinfo=timezone.utc)
+        fresh = (self.now - timedelta(seconds=3)).isoformat()
+        self.snapshot = _store_snapshot(self.root, received=self.now, quote_ts=fresh)
+
+    def tearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def _verify(self, probe, at_offset_seconds: int = 30):
+        return verify_market_checks(
+            self.snapshot, session_snapshot=probe,
+            adjudicated_at=self.now + timedelta(seconds=60 + at_offset_seconds),
+        )["official_instrument_session"]
+
+    def test_harvested_tradable_probe_passes(self) -> None:
+        probe = _store_session_probe(self.root / "sp", received=self.now + timedelta(seconds=60))
+        result = self._verify(probe)
+        self.assertEqual(result.status, CheckStatus.PASS)
+        self.assertTrue(any("probe_snapshot_id=" in item for item in result.evidence))
+
+    def test_not_tradable_fails(self) -> None:
+        probe = _store_session_probe(
+            self.root / "sp", received=self.now + timedelta(seconds=60), tradability="untradable",
+        )
+        result = self._verify(probe)
+        self.assertEqual(result.status, CheckStatus.FAIL)
+        self.assertEqual(result.reason, "INSTRUMENT_NOT_TRADABLE")
+
+    def test_inactive_state_fails(self) -> None:
+        probe = _store_session_probe(
+            self.root / "sp", received=self.now + timedelta(seconds=60), state="halted",
+        )
+        result = self._verify(probe)
+        self.assertEqual(result.status, CheckStatus.FAIL)
+        self.assertEqual(result.reason, "INSTRUMENT_STATE_NOT_ACTIVE")
+
+    def test_symbol_mismatch_fails(self) -> None:
+        probe = _store_session_probe(
+            self.root / "sp", received=self.now + timedelta(seconds=60), symbol="QQQ",
+        )
+        result = self._verify(probe)
+        self.assertEqual(result.status, CheckStatus.FAIL)
+        self.assertEqual(result.reason, "SESSION_SYMBOL_MISMATCH")
+
+    def test_replayed_probe_fails_contemporaneity(self) -> None:
+        probe = _store_session_probe(self.root / "sp", received=self.now + timedelta(seconds=60))
+        result = self._verify(probe, at_offset_seconds=3600)
+        self.assertEqual(result.status, CheckStatus.FAIL)
+        self.assertIn("PROBE_NOT_CONTEMPORANEOUS", result.reason or "")
+
+    def test_envelope_without_probe_marker_fails(self) -> None:
+        plain = _store_snapshot(
+            self.root / "plain", received=self.now + timedelta(seconds=60),
+            quote_ts=(self.now + timedelta(seconds=58)).isoformat(),
+        )
+        result = self._verify(plain)
+        self.assertEqual(result.status, CheckStatus.FAIL)
+        self.assertEqual(result.reason, "PROBE_MARKER_MISSING")
+
+    def test_probe_supersedes_supplied_evidence(self) -> None:
+        # A typed claim must not be able to override a failing harvested probe.
+        probe = _store_session_probe(
+            self.root / "sp", received=self.now + timedelta(seconds=60), tradability="untradable",
+        )
+        result = verify_market_checks(
+            self.snapshot,
+            session_snapshot=probe,
+            instrument_session={
+                "tool": "get_equity_tradability", "symbol": "SPY",
+                "active": True, "evidence": ["state=active"],
+            },
+            adjudicated_at=self.now + timedelta(seconds=90),
+        )["official_instrument_session"]
+        self.assertEqual(result.status, CheckStatus.FAIL)

@@ -430,11 +430,46 @@ def fresh_quote_probe_command(instrument_ids: list[str]) -> int:
     return 0
 
 
+def tradability_probe_command(symbol: str) -> int:
+    from execution.official_mcp_collector import (
+        OfficialCollectorError,
+        collect_tradability_probe,
+    )
+
+    try:
+        receipt = collect_tradability_probe(symbol)
+    except OfficialCollectorError as error:
+        print(json.dumps({"status": "FAILED_CLOSED", "error": str(error)}, indent=2))
+        return 1
+    print(json.dumps({
+        "status": "STORED",
+        "snapshot_id": receipt.snapshot_id,
+        "content_sha256": receipt.content_sha256,
+        "path": str(receipt.path),
+    }, indent=2, sort_keys=True))
+    return 0
+
+
+def bar_time_verify_command(snapshot: str, output: str | None) -> int:
+    from monitoring.bar_time_checks import verify_snapshot_bar_times
+
+    report = verify_snapshot_bar_times(snapshot)
+    if output is not None:
+        destination = Path(output)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        temporary = destination.with_suffix(destination.suffix + ".tmp")
+        temporary.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        temporary.replace(destination)
+    print(json.dumps(report, indent=2, sort_keys=True))
+    return 0 if report.get("status") == "PASS" else 2
+
+
 def market_check_verify_command(
     snapshot: str,
     output: str | None,
     evidence_path: str | None = None,
     fresh_quote_snapshot: str | None = None,
+    session_snapshot: str | None = None,
 ) -> int:
     from monitoring.market_checks import to_evidence_document, verify_market_checks
 
@@ -454,6 +489,7 @@ def market_check_verify_command(
             orders_positions_reconciliation=evidence.get("orders_positions_reconciliation"),
             instrument_session=evidence.get("instrument_session"),
             fresh_quote_snapshot=fresh_quote_snapshot,
+            session_snapshot=session_snapshot,
         )
     except (OSError, ValueError) as error:
         print(json.dumps({"status": "INVALID", "error": str(error)}, indent=2))
@@ -747,6 +783,11 @@ def parse_args() -> argparse.Namespace:
         "orders_positions_reconciliation, instrument_session (fail-closed validated).",
     )
     market_check_parser.add_argument(
+        "--session-snapshot",
+        help="Vault path of a tradability probe snapshot (from tradability-probe) to "
+        "adjudicate official_instrument_session from harvested evidence.",
+    )
+    market_check_parser.add_argument(
         "--fresh-quote-snapshot",
         help="Vault path of a fresh-quote probe snapshot (from fresh-quote-probe) to "
         "adjudicate fresh_option_quote at its own receipt time.",
@@ -756,6 +797,17 @@ def parse_args() -> argparse.Namespace:
         help="Store a single-call get_option_quotes probe in the vault (freshness evidence).",
     )
     probe_parser.add_argument("instrument_ids", nargs="+", help="1-6 option instrument ids.")
+    tradability_parser = subparsers.add_parser(
+        "tradability-probe",
+        help="Store a single-call get_equity_tradability probe in the vault (session evidence).",
+    )
+    tradability_parser.add_argument("symbol", help="Underlying equity symbol.")
+    bar_time_parser = subparsers.add_parser(
+        "bar-time-verify",
+        help="Deterministically verify bar ordering/interval/freshness in a raw snapshot.",
+    )
+    bar_time_parser.add_argument("snapshot", help="Path to an immutable raw vault snapshot.")
+    bar_time_parser.add_argument("--out", help="Write the report JSON here.")
     ack_parser = subparsers.add_parser(
         "scheduler-ack", help="Atomically record proof that a scheduled task started."
     )
@@ -827,10 +879,15 @@ def main() -> int:
         return raw_verify_command(args.path, args.sha256)
     if args.command == "market-check-verify":
         return market_check_verify_command(
-            args.snapshot, args.out, args.evidence, args.fresh_quote_snapshot
+            args.snapshot, args.out, args.evidence, args.fresh_quote_snapshot,
+            args.session_snapshot,
         )
     if args.command == "fresh-quote-probe":
         return fresh_quote_probe_command(args.instrument_ids)
+    if args.command == "tradability-probe":
+        return tradability_probe_command(args.symbol)
+    if args.command == "bar-time-verify":
+        return bar_time_verify_command(args.snapshot, args.out)
     if args.command == "scheduler-ack":
         return scheduler_ack_command(args.run_id, args.scheduled_for)
     if args.command == "scheduler-check":

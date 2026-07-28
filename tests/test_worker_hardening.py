@@ -31,10 +31,14 @@ class PromptTemplateTests(unittest.TestCase):
 
     def test_market_gate_section_uses_deterministic_adjudication_chain(self):
         template = (ROOT / "prompts/launchd_pilot_worker.md").read_text(encoding="utf-8")
-        self.assertIn("get_equity_tradability", template)
+        self.assertIn("tradability-probe", template)
         self.assertIn("fresh-quote-probe", template)
+        self.assertIn("bar-time-verify", template)
         self.assertIn("market-check-verify", template)
         self.assertIn("--fresh-quote-snapshot", template)
+        self.assertIn("--session-snapshot", template)
+        # The session claim must be harvested, never typed by the agent.
+        self.assertIn("HARVESTED, not typed", template)
 
     def test_pilot_fill_window_is_adjudicated_within_the_run(self):
         template = (ROOT / "prompts/launchd_pilot_worker.md").read_text(encoding="utf-8")

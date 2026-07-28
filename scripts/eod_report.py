@@ -276,6 +276,40 @@ def calibration_result(project_root: Path, day: str, friction: Decimal) -> dict:
     return result
 
 
+def bar_time_audit(project_root: Path, day: str) -> dict:
+    """Deterministically re-verify bar times in every snapshot vaulted today.
+
+    Model-independent: reads the immutable envelopes, not the agents' summaries.
+    """
+    from monitoring.bar_time_checks import verify_snapshot_bar_times
+
+    directory = project_root / "logs/raw" / day
+    snapshots: list[dict] = []
+    if directory.is_dir():
+        for path in sorted(directory.glob("*.json")):
+            report = verify_snapshot_bar_times(path)
+            if report.get("reason") == "NO_HISTORICAL_BARS_IN_SNAPSHOT":
+                continue  # probe snapshots carry no bars by design
+            snapshots.append({
+                "snapshot_id": report.get("snapshot_id"),
+                "status": report.get("status"),
+                "reason": report.get("reason"),
+                "freshness_enforced": report.get("freshness_enforced"),
+                "irregularities": sorted({
+                    item
+                    for symbol in report.get("symbols", [])
+                    for item in symbol.get("irregularities", [])
+                }),
+            })
+    unsound = [item for item in snapshots if item["status"] != "PASS"]
+    return {
+        "provenance": "HARVESTED_VAULT_SNAPSHOT",
+        "snapshots_checked": len(snapshots),
+        "unsound": len(unsound),
+        "detail": snapshots,
+    }
+
+
 def build_report(report_date: date, *, project_root: Path = ROOT) -> dict:
     warnings: list[str] = []
     day = report_date.isoformat()
@@ -372,6 +406,7 @@ def build_report(report_date: date, *, project_root: Path = ROOT) -> dict:
             "research_counterfactual": bucket_totals(research_trades),
         },
         "calibration_trade": calibration_result(project_root, day, friction),
+        "bar_time_audit": bar_time_audit(project_root, day),
         "warnings": warnings,
         "evidence_class": "PILOT_EXCLUDED_FROM_PERFORMANCE",
         "caveats": [
@@ -406,6 +441,18 @@ def render_markdown(report: dict) -> str:
         f"- round-trip friction per contract: ${pnl['round_trip_friction_usd']:.2f} ({pnl['friction_model']})",
         "",
     ]
+    audit = report.get("bar_time_audit") or {}
+    lines.append("## Bar-time audit (deterministic, from vaulted snapshots)")
+    lines.append("")
+    lines.append(
+        f"- snapshots checked: **{audit.get('snapshots_checked', 0)}** | "
+        f"unsound: **{audit.get('unsound', 0)}**"
+    )
+    for item in audit.get("detail", []):
+        if item.get("status") != "PASS":
+            lines.append(f"  - `{item.get('snapshot_id')}` — {', '.join(item.get('irregularities') or [])}")
+    lines.append("")
+
     calibration = report.get("calibration_trade") or {}
     lines.append("## Calibration trade (machinery validation — excluded from performance)")
     lines.append("")

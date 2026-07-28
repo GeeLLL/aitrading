@@ -36,20 +36,25 @@ deterministically and durably, in this exact order:
    form `{{"reconciled": true, "evidence": ["<role-based fact>", "..."]}}` —
    and when something does NOT reconcile, write `"reconciled": false` with a
    `"reason"`; never invent success.
-3. Live session evidence: call `get_equity_tradability` for SPY and set the
-   `instrument_session` key in the same file to EXACTLY:
-   `{{"tool": "get_equity_tradability", "symbol": "SPY", "active": <bool>,
-   "evidence": ["<fields quoted from the tool response>"]}}`. The symbol
-   MUST equal the snapshot symbol (the verifier rejects a mismatch). Never
-   invent a field the tool did not return.
+3. Session evidence — HARVESTED, not typed: run
+   `python3 main.py tradability-probe SPY` and note the stored vault path it
+   prints. The adjudicator reads tradability out of that immutable envelope,
+   so do not hand-write an `instrument_session` object; your own words are
+   not evidence here.
 4. Fresh-quote probe: pick one to three option instrument ids nearest the
    money from the snapshot's `get_option_instruments` output and run
    `python3 main.py fresh-quote-probe <id> [<id> ...]`; note the stored
    vault path it prints.
 5. Adjudicate deterministically:
    `python3 main.py market-check-verify <snapshot path> --evidence
-   <evidence file> --fresh-quote-snapshot <probe path> --out
+   <evidence file> --fresh-quote-snapshot <quote probe path>
+   --session-snapshot <tradability probe path> --out
    logs/qualification/<date>/<run id>.market-checks.json`.
+   Also record deterministic bar-time evidence:
+   `python3 main.py bar-time-verify <snapshot path> --out
+   logs/qualification/<date>/<run id>.bar-times.json` (a pre-open or
+   early-session snapshot legitimately carries prior-session bars; report
+   the verdict as returned, never adjust it).
    PASS, FAIL, and UNKNOWN must be preserved exactly as adjudicated; no
    missing value may be invented. This run does not authorize formal Shadow
    (authorization is an owner-only action and its tools are denied to you).

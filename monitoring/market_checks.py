@@ -171,6 +171,80 @@ def _check_fresh_option_quote(path: Path, raw_ok: bool, max_age_seconds: int) ->
     )
 
 
+def _check_session_probe(
+    path: Path,
+    *,
+    adjudicated_at: datetime,
+    snapshot_symbol: str | None,
+    snapshot_received_at: datetime | None,
+    contemporaneity_seconds: int,
+) -> MarketCheckResult:
+    """Adjudicate the instrument session from a harvested tradability probe.
+
+    Model-independent counterpart to ``_session_result``: the claim is read out
+    of a vault-stored ``get_equity_tradability`` response rather than typed by
+    the gate agent, and the same replay firewall applies (probe marker, index
+    membership, contemporaneity, not older than the snapshot).
+    """
+
+    name = "official_instrument_session"
+    try:
+        receipt = RawDataVault.verify(path, require_indexed=True)
+    except (OSError, ValueError) as error:
+        return MarketCheckResult(name, CheckStatus.FAIL, (), f"PROBE_VERIFY_FAILED:{error}")
+    try:
+        envelope = _load_envelope(path)
+    except (OSError, json.JSONDecodeError) as error:
+        return MarketCheckResult(name, CheckStatus.FAIL, (), f"PROBE_UNREADABLE:{error}")
+    if envelope.get("source") != "ROBINHOOD_OFFICIAL_MCP":
+        return MarketCheckResult(name, CheckStatus.FAIL, (), "PROBE_SOURCE_NOT_OFFICIAL_MCP")
+    request = envelope.get("request")
+    if not isinstance(request, Mapping) or request.get("probe") != "INSTRUMENT_TRADABILITY":
+        return MarketCheckResult(name, CheckStatus.FAIL, (), "PROBE_MARKER_MISSING")
+    probe_symbol = str(request.get("symbol") or "")
+    if snapshot_symbol and probe_symbol.upper() != snapshot_symbol.upper():
+        return MarketCheckResult(name, CheckStatus.FAIL, (), "SESSION_SYMBOL_MISMATCH")
+    received = _received_at(envelope)
+    if received is None:
+        return MarketCheckResult(name, CheckStatus.FAIL, (), "PROBE_NO_TRUSTED_RECEIPT_TIME")
+    lag = (adjudicated_at - received).total_seconds()
+    if lag < -60:
+        return MarketCheckResult(name, CheckStatus.FAIL, (), "PROBE_RECEIPT_IN_FUTURE")
+    if lag > contemporaneity_seconds:
+        return MarketCheckResult(
+            name, CheckStatus.FAIL, (),
+            f"PROBE_NOT_CONTEMPORANEOUS:{lag:.0f}s>{contemporaneity_seconds}s",
+        )
+    if snapshot_received_at is not None and received < snapshot_received_at:
+        return MarketCheckResult(name, CheckStatus.FAIL, (), "PROBE_PREDATES_SNAPSHOT")
+
+    result = next(
+        (r for r in _tool_results(envelope) if r.get("tool") == "get_equity_tradability"), None
+    )
+    if result is None:
+        return MarketCheckResult(name, CheckStatus.FAIL, (), "PROBE_HAS_NO_TRADABILITY_RESULT")
+    text = json.dumps(result.get("output"), ensure_ascii=False)
+    # Fail closed on anything that is not an explicit tradable+active reading.
+    tradable = '"tradability": "tradable"' in text or '"tradability":"tradable"' in text
+    active = '"state": "active"' in text or '"state":"active"' in text
+    if not tradable:
+        return MarketCheckResult(name, CheckStatus.FAIL, (), "INSTRUMENT_NOT_TRADABLE")
+    if not active:
+        return MarketCheckResult(name, CheckStatus.FAIL, (), "INSTRUMENT_STATE_NOT_ACTIVE")
+    return MarketCheckResult(
+        name,
+        CheckStatus.PASS,
+        (
+            f"probe_snapshot_id={receipt.snapshot_id}",
+            f"symbol={probe_symbol}",
+            "tradability=tradable",
+            "state=active",
+            f"probe_age_seconds={lag:.3f}",
+        ),
+        None,
+    )
+
+
 def _session_result(
     session: Mapping[str, Any] | None,
     snapshot_symbol: str | None = None,
@@ -323,6 +397,7 @@ def verify_market_checks(
     orders_positions_reconciliation: Mapping[str, Any] | None = None,
     instrument_session: Mapping[str, Any] | None = None,
     fresh_quote_snapshot: str | Path | None = None,
+    session_snapshot: str | Path | None = None,
     adjudicated_at: datetime | None = None,
 ) -> dict[str, MarketCheckResult]:
     """Adjudicate all six market checks deterministically from a raw snapshot.
@@ -374,7 +449,17 @@ def verify_market_checks(
     results = {
         "official_raw_mcp_snapshot": raw,
         "raw_to_feature_reproducibility": _check_reproducibility(path, raw_ok),
-        "official_instrument_session": _session_result(instrument_session, snapshot_symbol),
+        "official_instrument_session": (
+            _check_session_probe(
+                Path(session_snapshot),
+                adjudicated_at=now,
+                snapshot_symbol=snapshot_symbol,
+                snapshot_received_at=snapshot_received,
+                contemporaneity_seconds=probe_contemporaneity_seconds,
+            )
+            if session_snapshot is not None
+            else _session_result(instrument_session, snapshot_symbol)
+        ),
         "official_account_cash_reconciliation": _domain_result(
             "official_account_cash_reconciliation", account_reconciliation
         ),
