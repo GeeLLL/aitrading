@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from monitoring.authorization_watch import check_authorization_record
 from monitoring.collection_observer import ensure_day_registered
 from monitoring.daily_schedule import SESSION_TIMEZONE
 from monitoring.market_calendar import is_market_open
@@ -100,6 +101,9 @@ def main() -> int:
     # A hung worker holds the collector flock and would starve every later
     # slot; reap it so only its own slot is lost. Never backfills.
     reaped = reap_overdue_workers(now, project_root=ROOT)
+    # Forgery of the formal-Shadow authorization cannot be prevented in-process
+    # (the pilot agent has arbitrary python3), but it must never be quiet.
+    authorization = check_authorization_record(now, project_root=ROOT)
     eod_written = ensure_eod_report(now)
     delivered = deliver_pending_alerts()
     print(json.dumps({
@@ -109,9 +113,10 @@ def main() -> int:
         "incident_count": len(incidents),
         "alerts_delivered": delivered,
         "workers_reaped": [action["verdict"] for action in reaped],
+        "authorization_watch": authorization.get("status"),
         "eod_report_present": eod_written,
     }, sort_keys=True))
-    return 2 if incidents else 0
+    return 2 if (incidents or authorization.get("changed")) else 0
 
 
 if __name__ == "__main__":

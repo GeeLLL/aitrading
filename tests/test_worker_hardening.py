@@ -160,13 +160,26 @@ class AgentProcessGroupTests(unittest.TestCase):
 
 
 class SafetyInvariantTests(unittest.TestCase):
-    def test_agent_cannot_mint_shadow_authorization(self):
-        from scripts.launchd_shadow_worker import PILOT_DISALLOWED_TOOLS
+    def test_authorization_deny_rules_are_declared_but_not_sufficient_alone(self):
+        # Honest test: these deny rules block the TOOL paths, but the allowlist
+        # also grants Bash(python3:*) = arbitrary code execution, which reaches
+        # state/ regardless. Assert both the rules AND the compensating
+        # detection, so this can never again read as full prevention.
+        from scripts.launchd_shadow_worker import (
+            PILOT_ALLOWED_TOOLS,
+            PILOT_DISALLOWED_TOOLS,
+        )
         self.assertIn("shadow-authorize", PILOT_DISALLOWED_TOOLS)
         self.assertIn("Write(state/**)", PILOT_DISALLOWED_TOOLS)
         self.assertIn("Edit(state/**)", PILOT_DISALLOWED_TOOLS)
         source = (ROOT / "scripts/launchd_shadow_worker.py").read_text(encoding="utf-8")
         self.assertIn('"--disallowedTools", PILOT_DISALLOWED_TOOLS', source)
+        # The residual hole is real and must stay visible until it is closed.
+        self.assertIn("Bash(python3:*)", PILOT_ALLOWED_TOOLS)
+        # Compensating control: every governed file is fingerprint-watched.
+        from monitoring.authorization_watch import GOVERNED_PATHS
+        self.assertIn("state/shadow_authorization.json", GOVERNED_PATHS.values())
+        self.assertIn("state/trading_armed", GOVERNED_PATHS.values())
 
     def test_market_gate_timeout_stays_under_reaper_deadline(self):
         from scripts.launchd_shadow_worker import MARKET_GATE_TIMEOUT_SECONDS

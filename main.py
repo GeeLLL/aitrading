@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from datetime import date, datetime
 from pathlib import Path
 
@@ -93,8 +94,34 @@ def shadow_readiness_command(market_checks_path: str | None = None) -> int:
     return 0 if report.offline_ready else 1
 
 
+OWNER_CONFIRMATION_PHRASE = "AUTHORIZE FORMAL SHADOW"
+
+
 def shadow_authorize_command(qualification: str, *, owner_approved: bool) -> int:
     strategy_version = "strategy_v1.0"
+    # Owner-only gate. The unattended agent runs headless with no controlling
+    # terminal, so requiring an interactive TTY plus a typed phrase keeps the
+    # sanctioned path out of its reach. (This is a barrier, not a proof: an
+    # agent with arbitrary `python3` can still write the state file directly —
+    # which is why the watchdog alerts on any change to it. See
+    # monitoring/authorization_watch.py.)
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        print(json.dumps({
+            "status": "REFUSED",
+            "reasons": ["OWNER_APPROVAL_REQUIRES_INTERACTIVE_TTY"],
+        }, indent=2))
+        return 2
+    print(f"Type exactly: {OWNER_CONFIRMATION_PHRASE}")
+    try:
+        typed = input("> ").strip()
+    except EOFError:
+        typed = ""
+    if typed != OWNER_CONFIRMATION_PHRASE:
+        print(json.dumps({
+            "status": "REFUSED",
+            "reasons": ["OWNER_CONFIRMATION_PHRASE_MISMATCH"],
+        }, indent=2))
+        return 2
     try:
         checks = load_p0_qualification(qualification, strategy_version)
         authorization = evaluate_shadow_authorization(
