@@ -46,6 +46,12 @@ minimum_option_volume = 500
 minimum_open_interest = 500
 earnings_blackout_calendar_days = 3
 unknown_required_field_rejects = true
+# Contract-identity sanity band. A delta 0.30-0.65, 7-21 DTE option is near the
+# money, so a strike more than 30% away from the underlying cannot be the
+# contract we evaluated -- it is a mis-selected or fabricated identity. This is
+# deliberately generous: it never rejects a legitimate candidate, it catches
+# nonsense (strike=99999) and missing identity.
+maximum_strike_distance_ratio = 0.30
 maximum_contracts = 1
 stage_1_maximum_premium_usd = 75
 

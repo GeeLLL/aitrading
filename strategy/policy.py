@@ -60,6 +60,10 @@ def validate_strategy_policy(policy: dict[str, Any]) -> None:
         "Unknown required fields must reject the candidate.",
     )
     require(
+        eligibility.get("maximum_strike_distance_ratio") == 0.30,
+        "Strike sanity band must remain 30 percent of the underlying price.",
+    )
+    require(
         eligibility.get("maximum_contracts") == 1,
         "Contract quantity must remain one.",
     )

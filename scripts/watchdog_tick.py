@@ -14,6 +14,7 @@ from monitoring.authorization_watch import check_authorization_record
 from monitoring.collection_observer import ensure_day_registered
 from monitoring.daily_schedule import SESSION_TIMEZONE
 from monitoring.market_calendar import is_market_open
+from monitoring.power_watch import check_power
 from monitoring.remote_alert import send_remote_alert
 from monitoring.scheduler_watchdog import scan_expected_runs
 from monitoring.worker_reaper import reap_overdue_workers
@@ -104,6 +105,8 @@ def main() -> int:
     # Forgery of the formal-Shadow authorization cannot be prevented in-process
     # (the pilot agent has arbitrary python3), but it must never be quiet.
     authorization = check_authorization_record(now, project_root=ROOT)
+    # A mid-session drop to battery silently risks every remaining slot.
+    power = check_power(now, project_root=ROOT)
     eod_written = ensure_eod_report(now)
     delivered = deliver_pending_alerts()
     print(json.dumps({
@@ -114,6 +117,7 @@ def main() -> int:
         "alerts_delivered": delivered,
         "workers_reaped": [action["verdict"] for action in reaped],
         "authorization_watch": authorization.get("status"),
+        "power": power.get("status"),
         "eod_report_present": eod_written,
     }, sort_keys=True))
     return 2 if (incidents or authorization.get("changed")) else 0

@@ -45,6 +45,7 @@ def build_snapshot() -> ShadowSnapshot:
         "SOFI", OptionType.CALL, Decimal("17.5"), date(2026, 7, 24),
         Decimal("0.47"), Decimal("0.48"), Decimal("0.47"), NOW - timedelta(seconds=1),
         6500, 5300, date(2026, 7, 29), NOW,
+        "e3345530-8e0e-42f2-b2ff-cf5cac20d675",
     )
     account = AccountSnapshot(
         "cash", Decimal("300"), Decimal("300"), 0, 0, 0, 0, 0, 0,

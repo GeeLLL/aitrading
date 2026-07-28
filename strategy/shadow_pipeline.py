@@ -46,6 +46,7 @@ class OptionCandidate:
     open_interest: int | None
     earnings_date: date | None
     quote_received_at: datetime | None = None
+    instrument_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -155,6 +156,22 @@ def evaluate_shadow_candidate(
             reasons.append("FINAL_OPTION_QUOTE_RECEIPT_FROM_FUTURE")
         elif decision_lag > maximum_quote_age:
             reasons.append("FINAL_OPTION_QUOTE_NOT_REFRESHED")
+    # Contract identity must be resolved and plausible. Without this the risk
+    # path approved strike=None and strike=99999 alike: nothing downstream ever
+    # referenced the strike, so a mis-selected or fabricated contract could be
+    # approved as if it were the one that was analysed.
+    if not str(option.instrument_id or "").strip():
+        reasons.append("OPTION_INSTRUMENT_ID_UNKNOWN")
+    if option.strike is None or option.strike <= 0:
+        reasons.append("OPTION_STRIKE_UNKNOWN")
+    elif underlying_snapshot.close is None:
+        reasons.append("UNDERLYING_PRICE_UNKNOWN_FOR_STRIKE_CHECK")
+    else:
+        band = Decimal(str(eligibility["maximum_strike_distance_ratio"]))
+        distance = abs(option.strike - underlying_snapshot.close) / underlying_snapshot.close
+        if distance > band:
+            reasons.append("OPTION_STRIKE_IMPLAUSIBLE_FOR_UNDERLYING")
+
     if option.delta is None:
         reasons.append("OPTION_DELTA_UNKNOWN")
     else:
@@ -210,6 +227,8 @@ def evaluate_shadow_candidate(
         quote_updated_at=option.quote_updated_at,
         volume=option.volume,
         open_interest=option.open_interest,
+        strike=option.strike,
+        instrument_id=option.instrument_id,
     )
 
     shadow_config = copy.deepcopy(safety_config)

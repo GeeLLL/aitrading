@@ -1,44 +1,106 @@
 {
-  "schema_version": 1,
-  "sample_id": "example-2026-07-17T15:00:00Z",
-  "received_at": "2026-07-17T15:00:00Z",
-  "source_updated_at": "2026-07-17T14:59:59Z",
+  "account": {
+    "account_type": "cash",
+    "buying_power": "300",
+    "consecutive_losses": 0,
+    "entries_today": 0,
+    "equity": "300",
+    "equity_position_count": 0,
+    "open_equity_order_count": 0,
+    "open_option_order_count": 0,
+    "option_position_count": 0,
+    "reserved_cash": "0",
+    "settled_cash": "300",
+    "unsettled_cash": "0"
+  },
   "completed_live_trades": 0,
   "market": {
     "market_open": true,
-    "within_entry_window": true,
-    "near_forced_exit": false
-  },
-  "account": {
-    "account_type": "cash",
-    "equity": "300",
-    "buying_power": "300",
-    "option_position_count": 0,
-    "equity_position_count": 0,
-    "open_option_order_count": 0,
-    "open_equity_order_count": 0,
-    "consecutive_losses": 0,
-    "entries_today": 0,
-    "settled_cash": "300",
-    "unsettled_cash": "0",
-    "reserved_cash": "0"
+    "near_forced_exit": false,
+    "within_entry_window": true
   },
   "market_bars": [
-    {"symbol": "SPY", "close": "101", "vwap": "100", "ema_fast": "101", "ema_slow": "100", "interval_minutes": 5, "started_at": "2026-07-17T14:45:00Z", "ended_at": "2026-07-17T14:50:00Z", "source_updated_at": "2026-07-17T14:50:01Z", "received_at": "2026-07-17T14:50:02Z", "completed": true},
-    {"symbol": "SPY", "close": "102", "vwap": "100", "ema_fast": "101", "ema_slow": "100", "interval_minutes": 5, "started_at": "2026-07-17T14:50:00Z", "ended_at": "2026-07-17T14:55:00Z", "source_updated_at": "2026-07-17T14:55:01Z", "received_at": "2026-07-17T14:55:02Z", "completed": true},
-    {"symbol": "QQQ", "close": "201", "vwap": "200", "ema_fast": "201", "ema_slow": "200", "interval_minutes": 5, "started_at": "2026-07-17T14:45:00Z", "ended_at": "2026-07-17T14:50:00Z", "source_updated_at": "2026-07-17T14:50:01Z", "received_at": "2026-07-17T14:50:02Z", "completed": true},
-    {"symbol": "QQQ", "close": "202", "vwap": "200", "ema_fast": "201", "ema_slow": "200", "interval_minutes": 5, "started_at": "2026-07-17T14:50:00Z", "ended_at": "2026-07-17T14:55:00Z", "source_updated_at": "2026-07-17T14:55:01Z", "received_at": "2026-07-17T14:55:02Z", "completed": true}
+    {
+      "close": "101",
+      "completed": true,
+      "ema_fast": "101",
+      "ema_slow": "100",
+      "ended_at": "2026-07-17T14:50:00Z",
+      "interval_minutes": 5,
+      "received_at": "2026-07-17T14:50:02Z",
+      "source_updated_at": "2026-07-17T14:50:01Z",
+      "started_at": "2026-07-17T14:45:00Z",
+      "symbol": "SPY",
+      "vwap": "100"
+    },
+    {
+      "close": "102",
+      "completed": true,
+      "ema_fast": "101",
+      "ema_slow": "100",
+      "ended_at": "2026-07-17T14:55:00Z",
+      "interval_minutes": 5,
+      "received_at": "2026-07-17T14:55:02Z",
+      "source_updated_at": "2026-07-17T14:55:01Z",
+      "started_at": "2026-07-17T14:50:00Z",
+      "symbol": "SPY",
+      "vwap": "100"
+    },
+    {
+      "close": "201",
+      "completed": true,
+      "ema_fast": "201",
+      "ema_slow": "200",
+      "ended_at": "2026-07-17T14:50:00Z",
+      "interval_minutes": 5,
+      "received_at": "2026-07-17T14:50:02Z",
+      "source_updated_at": "2026-07-17T14:50:01Z",
+      "started_at": "2026-07-17T14:45:00Z",
+      "symbol": "QQQ",
+      "vwap": "200"
+    },
+    {
+      "close": "202",
+      "completed": true,
+      "ema_fast": "201",
+      "ema_slow": "200",
+      "ended_at": "2026-07-17T14:55:00Z",
+      "interval_minutes": 5,
+      "received_at": "2026-07-17T14:55:02Z",
+      "source_updated_at": "2026-07-17T14:55:01Z",
+      "started_at": "2026-07-17T14:50:00Z",
+      "symbol": "QQQ",
+      "vwap": "200"
+    }
   ],
-  "underlying": {
-    "symbol": "SOFI", "close": "17.60", "vwap": "17.30", "ema_fast": "17.50",
-    "ema_slow": "17.35", "breakout_high": "17.55", "breakdown_low": "17.00",
-    "current_volume": 1800, "average_volume": "1000"
-  },
   "option": {
-    "underlying": "SOFI", "option_type": "CALL", "strike": "17.5",
-    "expiration": "2026-07-24", "bid": "0.47", "ask": "0.48", "delta": "0.47",
+    "ask": "0.48",
+    "bid": "0.47",
+    "delta": "0.47",
+    "earnings_date": "2026-07-29",
+    "expiration": "2026-07-24",
+    "instrument_id": "e3345530-8e0e-42f2-b2ff-cf5cac20d675",
+    "open_interest": 5300,
+    "option_type": "CALL",
+    "quote_received_at": "2026-07-17T15:00:00Z",
     "quote_updated_at": "2026-07-17T14:59:59Z",
-    "quote_received_at": "2026-07-17T15:00:00Z", "volume": 6500,
-    "open_interest": 5300, "earnings_date": "2026-07-29"
+    "strike": "17.5",
+    "underlying": "SOFI",
+    "volume": 6500
+  },
+  "received_at": "2026-07-17T15:00:00Z",
+  "sample_id": "example-2026-07-17T15:00:00Z",
+  "schema_version": 1,
+  "source_updated_at": "2026-07-17T14:59:59Z",
+  "underlying": {
+    "average_volume": "1000",
+    "breakdown_low": "17.00",
+    "breakout_high": "17.55",
+    "close": "17.60",
+    "current_volume": 1800,
+    "ema_fast": "17.50",
+    "ema_slow": "17.35",
+    "symbol": "SOFI",
+    "vwap": "17.30"
   }
 }

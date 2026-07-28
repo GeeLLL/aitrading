@@ -113,15 +113,22 @@ it never consumes the one-per-day policy-trade budget):
   universe symbol with the highest volume_ratio this run (no signal
   requirement), its 7-21 DTE expiration nearest 14 days, the contract with
   |delta| in [0.30, 0.65] closest to 0.50 (tie: higher open interest),
-  preferring premium (mark x 100) at or under $75, else $120, else $300;
-  if that symbol has none at or under $300, move to the next-highest
-  volume_ratio symbol. Record a simulated entry AT THE OBSERVED ASK
+  preferring premium (mark x 100) at or under $75, else $120, else $300.
+  The contract MUST also have volume >= 100 AND open_interest >= 100: a
+  zero-volume contract's quoted spread does not represent a realistically
+  fillable price, and calibration exists to measure real friction (observed
+  2026-07-28: the chosen IWM contract had volume=0 and OI=0, making its
+  friction datapoint untrustworthy). If that symbol has no contract meeting
+  all of the above at or under $300, move to the next-highest volume_ratio
+  symbol; if no universe symbol qualifies, write no entry and record
+  `NO_QUALIFYING_CALIBRATION_CONTRACT` with the reason in your summary. Record a simulated entry AT THE OBSERVED ASK
   (unconditional — calibration measures machinery, not selectivity) by
   writing `logs/calibration/<date>/entry.json` with exactly: schema_version
   1, run_id, symbol, instrument_id, strike, expiration_date, option_type,
   delta, implied_volatility, volume, open_interest, premium_band (75, 120,
   or 300), entry_observed_at, entry_bid, entry_ask, entry_mark,
-  source_updated_at, evidence_class. Never overwrite an existing entry.
+  source_updated_at, evidence_class. Never overwrite an existing entry, and
+  never record an entry for a contract failing the liquidity floor above.
 - EXIT — if an entry exists and `logs/calibration/<date>/exit.json` does
   not: when at least 40 minutes have passed since entry_observed_at, OR
   this is the 11:23 slot (last pilot slot), refresh that exact instrument's

@@ -43,6 +43,12 @@ class OrderIntent:
     volume: int | None
     open_interest: int | None
 
+    # Contract identity. Carried so the risk layer sees WHICH contract it is
+    # approving; an intent whose identity is unresolved must never be approved
+    # (strike was previously absent entirely, so strike=99999 passed silently).
+    strike: Decimal | None = None
+    instrument_id: str | None = None
+
 
 @dataclass(frozen=True)
 class AccountSnapshot:
