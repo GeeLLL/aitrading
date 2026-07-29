@@ -209,12 +209,21 @@ def reconstruct_trade(events: list[dict], friction: Decimal) -> dict:
     return record
 
 
-def realistic_cost_view(entry: dict, exit_record: dict, friction_model: dict) -> dict | None:
-    """Recompute the calibration trade's cost with spread and decay included.
+def entry_cost_hurdle(entry: dict, exit_record: dict, friction_model: dict) -> dict | None:
+    """The EX-ANTE cost hurdle this contract faced when it was entered.
 
-    Reported ALONGSIDE the frozen friction number, never instead of it: the
-    frozen constant stays the governed figure, while this shows what the trade
-    actually cost. Returns None when an input is unknown — never estimates.
+    IMPORTANT — why this is not subtracted from the realised P&L. The recorded
+    gross is ``(exit_bid - entry_ask) * 100``: bought at the ask, sold at the
+    bid. That number ALREADY embeds the full bid-ask cost of both legs, and the
+    mid-to-mid move it contains has already absorbed whatever time decay
+    occurred while the position was open. Subtracting a modelled spread and
+    decay on top of it double-counts both — which an earlier version of this
+    report did, reporting an over-stated loss.
+
+    So this block answers a different, forward-looking question: at entry, how
+    far did the option have to move to break even? That is the number worth
+    knowing before committing, and it is what the cost model is for. Returns
+    None when an input is unknown — never estimates.
     """
     from datetime import date as _date
 
@@ -247,6 +256,7 @@ def realistic_cost_view(entry: dict, exit_record: dict, friction_model: dict) ->
     ratio = understatement_ratio(cost, friction_model)
     return {
         **cost.to_dict(),
+        "basis": "EX_ANTE_HURDLE_AT_ENTRY",
         "dte_days": dte,
         "holding_days": float(round(holding_days, 4)),
         "frozen_friction_usd": float(Decimal(str(friction_model["per_contract_fee_usd"])) * 2
@@ -254,8 +264,12 @@ def realistic_cost_view(entry: dict, exit_record: dict, friction_model: dict) ->
                                      + Decimal(str(friction_model["exit_latency_slippage_ticks"]))
                                      * Decimal(str(friction_model["option_tick_size_usd"])) * Decimal("100")),
         "frozen_understated_by_x": None if ratio is None else float(round(ratio, 3)),
-        "note": "Spread + fees + ATM decay (1/(2*DTE) per calendar day). "
-                "The frozen friction_model omits spread and decay entirely.",
+        "note": "Ex-ante hurdle: spread + fees + ATM decay (1/(2*DTE) per "
+                "calendar day) the position had to overcome. NOT subtracted "
+                "from the realised gross, which is measured ask-to-bid and so "
+                "already contains the spread and the decay. The frozen "
+                "friction_model omits both, which is why it looks so much "
+                "smaller than the real hurdle.",
     }
 
 
@@ -326,12 +340,25 @@ def calibration_result(
     result["friction_usd"] = float(friction)
     result["net_pnl_usd"] = float(gross - friction)
     if friction_model:
-        realistic = realistic_cost_view(entry, exit_record, friction_model)
-        if realistic is not None:
-            result["realistic_cost"] = realistic
-            result["net_pnl_usd_realistic"] = float(
-                gross - Decimal(str(realistic["total_cost_usd"]))
-            )
+        hurdle = entry_cost_hurdle(entry, exit_record, friction_model)
+        if hurdle is not None:
+            result["entry_cost_hurdle"] = hurdle
+        # The realised gross is ask-to-bid, so spread and decay are already in
+        # it. The only cost still to deduct is the fixed fees. The frozen
+        # friction number is kept above as the governed figure, but note it
+        # also books a slippage tick that the observed bid already reflects.
+        fees = (
+            Decimal(str(friction_model["per_contract_fee_usd"])) * Decimal("2")
+            + Decimal(str(friction_model["regulatory_exit_fee_usd"]))
+        )
+        result["fees_usd"] = float(fees)
+        result["net_pnl_usd_fees_only"] = float(gross - fees)
+        result["accounting_note"] = (
+            "gross is ask-to-bid and already contains the bid-ask cost and the "
+            "time decay incurred while held; net_pnl_usd_fees_only deducts only "
+            "the fixed fees. net_pnl_usd (frozen) additionally books a slippage "
+            "tick the observed bid already reflects."
+        )
     return result
 
 
@@ -530,17 +557,19 @@ def render_markdown(report: dict) -> str:
             f"- gross ${calibration['gross_pnl_usd']:.2f} − frozen friction "
             f"${calibration['friction_usd']:.2f} = **net ${calibration['net_pnl_usd']:.2f}**"
         )
-        realistic = calibration.get("realistic_cost")
-        if realistic:
+        if calibration.get("net_pnl_usd_fees_only") is not None:
             lines.append(
-                f"- realistic cost ${realistic['total_cost_usd']:.2f} "
-                f"({realistic['total_pct_of_premium']:.2f}% of premium: spread "
-                f"${realistic['spread_cost_usd']:.2f} + fees ${realistic['fee_cost_usd']:.2f} + "
-                f"decay ${realistic['decay_cost_usd']:.2f}) — the frozen constant understates by "
-                f"**{realistic['frozen_understated_by_x']}x**"
+                f"- net deducting only fees (gross is ask-to-bid, so spread and "
+                f"decay are already inside it): "
+                f"**${calibration['net_pnl_usd_fees_only']:.2f}**"
             )
+        hurdle = calibration.get("entry_cost_hurdle")
+        if hurdle:
             lines.append(
-                f"- net at realistic cost: **${calibration['net_pnl_usd_realistic']:.2f}**"
+                f"- ex-ante hurdle at entry: **{hurdle['total_pct_of_premium']:.2f}% of premium** "
+                f"(spread ${hurdle['spread_cost_usd']:.2f} + fees ${hurdle['fee_cost_usd']:.2f} + "
+                f"decay ${hurdle['decay_cost_usd']:.2f}) — the frozen constant understates the "
+                f"hurdle by **{hurdle['frozen_understated_by_x']}x**"
             )
     else:
         lines.append(f"- status: **{calibration.get('status', 'NO_ENTRY')}**")

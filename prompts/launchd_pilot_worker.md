@@ -36,19 +36,19 @@ deterministically and durably, in this exact order:
    form `{{"reconciled": true, "evidence": ["<role-based fact>", "..."]}}` —
    and when something does NOT reconcile, write `"reconciled": false` with a
    `"reason"`; never invent success.
-3. Session evidence — HARVESTED, not typed: run
-   `python3 main.py tradability-probe SPY` and note the stored vault path it
-   prints. The adjudicator reads tradability out of that immutable envelope,
-   so do not hand-write an `instrument_session` object; your own words are
-   not evidence here.
+3. Session evidence needs NO action from you: the adjudicator reads `state`,
+   `has_traded` and `venue_last_trade_time` straight out of the snapshot's own
+   `get_equity_quotes` payload from step 1. Do not hand-write an
+   `instrument_session` object and do not call `get_equity_tradability` (it
+   requires an account number, which must never enter the vault). Your own
+   words are not evidence here.
 4. Fresh-quote probe: pick one to three option instrument ids nearest the
    money from the snapshot's `get_option_instruments` output and run
    `python3 main.py fresh-quote-probe <id> [<id> ...]`; note the stored
    vault path it prints.
 5. Adjudicate deterministically:
    `python3 main.py market-check-verify <snapshot path> --evidence
-   <evidence file> --fresh-quote-snapshot <quote probe path>
-   --session-snapshot <tradability probe path> --out
+   <evidence file> --fresh-quote-snapshot <quote probe path> --out
    logs/qualification/<date>/<run id>.market-checks.json`.
    Also record deterministic bar-time evidence:
    `python3 main.py bar-time-verify <snapshot path> --out

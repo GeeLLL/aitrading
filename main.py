@@ -430,80 +430,6 @@ def fresh_quote_probe_command(instrument_ids: list[str]) -> int:
     return 0
 
 
-def tradability_probe_command(symbol: str) -> int:
-    from execution.official_mcp_collector import (
-        OfficialCollectorError,
-        collect_tradability_probe,
-    )
-
-    try:
-        receipt = collect_tradability_probe(symbol)
-    except OfficialCollectorError as error:
-        print(json.dumps({"status": "FAILED_CLOSED", "error": str(error)}, indent=2))
-        return 1
-    print(json.dumps({
-        "status": "STORED",
-        "snapshot_id": receipt.snapshot_id,
-        "content_sha256": receipt.content_sha256,
-        "path": str(receipt.path),
-    }, indent=2, sort_keys=True))
-    return 0
-
-
-def cost_hurdle_command(
-    bid: str, ask: str, dte: int, holding_days: str,
-    delta: str | None, underlying_price: str | None,
-) -> int:
-    """Deterministic real round-trip cost: spread + fees + ATM time decay."""
-    import tomllib
-    from decimal import Decimal, InvalidOperation
-
-    from research.cost_model import round_trip_cost, understatement_ratio
-
-    try:
-        with open("config/safety.toml", "rb") as handle:
-            friction_model = tomllib.load(handle)["friction_model"]
-        cost = round_trip_cost(
-            bid=Decimal(bid), ask=Decimal(ask), dte_days=dte,
-            holding_days=Decimal(holding_days), friction_model=friction_model,
-        )
-    except (OSError, KeyError, ValueError, InvalidOperation, ArithmeticError) as error:
-        print(json.dumps({"status": "INVALID", "error": str(error)}, indent=2))
-        return 1
-    payload = cost.to_dict()
-    payload["dte_days"] = dte
-    payload["holding_days"] = float(Decimal(holding_days))
-    ratio = understatement_ratio(cost, friction_model)
-    payload["frozen_understated_by_x"] = None if ratio is None else float(round(ratio, 3))
-    if delta is not None and underlying_price is not None:
-        try:
-            move = cost.breakeven_underlying_move_pct(
-                delta=Decimal(delta), underlying_price=Decimal(underlying_price),
-            )
-            payload["breakeven_underlying_move_pct"] = (
-                None if move is None else float(round(move, 4))
-            )
-        except (ValueError, InvalidOperation, ArithmeticError):
-            payload["breakeven_underlying_move_pct"] = None
-    else:
-        payload["breakeven_underlying_move_pct"] = None
-    print(json.dumps(payload, indent=2, sort_keys=True))
-    return 0
-
-
-def validation_power_command(observations: int, trading_days: int | None) -> int:
-    """State plainly what a sample of this size can and cannot establish."""
-    from research.validation_power import assess
-
-    try:
-        report = assess(observations, trading_days=trading_days)
-    except ValueError as error:
-        print(json.dumps({"status": "INVALID", "error": str(error)}, indent=2))
-        return 1
-    print(json.dumps(report.to_dict(), indent=2, sort_keys=True))
-    return 0
-
-
 def bar_time_verify_command(snapshot: str, output: str | None) -> int:
     from monitoring.bar_time_checks import verify_snapshot_bar_times
 
@@ -523,7 +449,6 @@ def market_check_verify_command(
     output: str | None,
     evidence_path: str | None = None,
     fresh_quote_snapshot: str | None = None,
-    session_snapshot: str | None = None,
 ) -> int:
     from monitoring.market_checks import to_evidence_document, verify_market_checks
 
@@ -543,7 +468,6 @@ def market_check_verify_command(
             orders_positions_reconciliation=evidence.get("orders_positions_reconciliation"),
             instrument_session=evidence.get("instrument_session"),
             fresh_quote_snapshot=fresh_quote_snapshot,
-            session_snapshot=session_snapshot,
         )
     except (OSError, ValueError) as error:
         print(json.dumps({"status": "INVALID", "error": str(error)}, indent=2))
@@ -837,11 +761,6 @@ def parse_args() -> argparse.Namespace:
         "orders_positions_reconciliation, instrument_session (fail-closed validated).",
     )
     market_check_parser.add_argument(
-        "--session-snapshot",
-        help="Vault path of a tradability probe snapshot (from tradability-probe) to "
-        "adjudicate official_instrument_session from harvested evidence.",
-    )
-    market_check_parser.add_argument(
         "--fresh-quote-snapshot",
         help="Vault path of a fresh-quote probe snapshot (from fresh-quote-probe) to "
         "adjudicate fresh_option_quote at its own receipt time.",
@@ -851,11 +770,6 @@ def parse_args() -> argparse.Namespace:
         help="Store a single-call get_option_quotes probe in the vault (freshness evidence).",
     )
     probe_parser.add_argument("instrument_ids", nargs="+", help="1-6 option instrument ids.")
-    tradability_parser = subparsers.add_parser(
-        "tradability-probe",
-        help="Store a single-call get_equity_tradability probe in the vault (session evidence).",
-    )
-    tradability_parser.add_argument("symbol", help="Underlying equity symbol.")
     bar_time_parser = subparsers.add_parser(
         "bar-time-verify",
         help="Deterministically verify bar ordering/interval/freshness in a raw snapshot.",
@@ -950,12 +864,9 @@ def main() -> int:
     if args.command == "market-check-verify":
         return market_check_verify_command(
             args.snapshot, args.out, args.evidence, args.fresh_quote_snapshot,
-            args.session_snapshot,
         )
     if args.command == "fresh-quote-probe":
         return fresh_quote_probe_command(args.instrument_ids)
-    if args.command == "tradability-probe":
-        return tradability_probe_command(args.symbol)
     if args.command == "bar-time-verify":
         return bar_time_verify_command(args.snapshot, args.out)
     if args.command == "cost-hurdle":

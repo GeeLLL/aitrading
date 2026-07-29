@@ -29,6 +29,7 @@ from execution.official_mcp_collector import (
     _parse_iso_aware,
 )
 from execution.raw_data_vault import RawDataVault
+from monitoring.bar_time_checks import within_regular_session
 from monitoring.shadow_readiness import MONDAY_MARKET_CHECKS
 
 
@@ -171,75 +172,94 @@ def _check_fresh_option_quote(path: Path, raw_ok: bool, max_age_seconds: int) ->
     )
 
 
-def _check_session_probe(
+def _check_session_from_quotes(
     path: Path,
-    *,
-    adjudicated_at: datetime,
+    raw_ok: bool,
     snapshot_symbol: str | None,
-    snapshot_received_at: datetime | None,
-    contemporaneity_seconds: int,
+    *,
+    maximum_last_trade_age_seconds: int = 900,
 ) -> MarketCheckResult:
-    """Adjudicate the instrument session from a harvested tradability probe.
+    """Adjudicate the instrument session from the snapshot's OWN equity quote.
 
-    Model-independent counterpart to ``_session_result``: the claim is read out
-    of a vault-stored ``get_equity_tradability`` response rather than typed by
-    the gate agent, and the same replay firewall applies (probe marker, index
-    membership, contemporaneity, not older than the snapshot).
+    This replaces an earlier design that tried to harvest ``get_equity_tradability``
+    into a separate probe. That tool requires ``account_number`` (it reports
+    per-account eligibility), so a tradability probe would either be unable to
+    call it or would have to carry an account identifier into the immutable
+    vault — breaking the invariant that no account identifier ever enters it.
+
+    ``get_equity_quotes`` is already in the raw collector's allowlist, needs no
+    account context, and is already inside every snapshot. Its ``state``,
+    ``has_traded`` and ``venue_last_trade_time`` fields answer the session
+    question directly, and because the evidence IS the main snapshot it inherits
+    that snapshot's integrity and replay protection for free.
+
+    The last-trade-age bound is only enforced inside the regular session: a
+    pre-open canary legitimately carries the prior session's last trade.
     """
 
     name = "official_instrument_session"
-    try:
-        receipt = RawDataVault.verify(path, require_indexed=True)
-    except (OSError, ValueError) as error:
-        return MarketCheckResult(name, CheckStatus.FAIL, (), f"PROBE_VERIFY_FAILED:{error}")
+    if not raw_ok:
+        return MarketCheckResult(name, CheckStatus.UNKNOWN, (), "DEPENDS_ON_RAW_SNAPSHOT")
     try:
         envelope = _load_envelope(path)
     except (OSError, json.JSONDecodeError) as error:
-        return MarketCheckResult(name, CheckStatus.FAIL, (), f"PROBE_UNREADABLE:{error}")
-    if envelope.get("source") != "ROBINHOOD_OFFICIAL_MCP":
-        return MarketCheckResult(name, CheckStatus.FAIL, (), "PROBE_SOURCE_NOT_OFFICIAL_MCP")
-    request = envelope.get("request")
-    if not isinstance(request, Mapping) or request.get("probe") != "INSTRUMENT_TRADABILITY":
-        return MarketCheckResult(name, CheckStatus.FAIL, (), "PROBE_MARKER_MISSING")
-    probe_symbol = str(request.get("symbol") or "")
-    if snapshot_symbol and probe_symbol.upper() != snapshot_symbol.upper():
-        return MarketCheckResult(name, CheckStatus.FAIL, (), "SESSION_SYMBOL_MISMATCH")
+        return MarketCheckResult(name, CheckStatus.FAIL, (), f"SNAPSHOT_UNREADABLE:{error}")
     received = _received_at(envelope)
     if received is None:
-        return MarketCheckResult(name, CheckStatus.FAIL, (), "PROBE_NO_TRUSTED_RECEIPT_TIME")
-    lag = (adjudicated_at - received).total_seconds()
-    if lag < -60:
-        return MarketCheckResult(name, CheckStatus.FAIL, (), "PROBE_RECEIPT_IN_FUTURE")
-    if lag > contemporaneity_seconds:
+        return MarketCheckResult(name, CheckStatus.FAIL, (), "NO_TRUSTED_RECEIPT_TIME")
+
+    rows: list[Mapping[str, Any]] = []
+    for result in _tool_results(envelope):
+        if result.get("tool") != "get_equity_quotes":
+            continue
+        output = result.get("output")
+        data = output.get("data", output) if isinstance(output, Mapping) else output
+        candidates = data.get("results") if isinstance(data, Mapping) else data
+        if isinstance(candidates, list):
+            rows.extend(row for row in candidates if isinstance(row, Mapping))
+    if not rows:
+        return MarketCheckResult(name, CheckStatus.UNKNOWN, (), "NO_EQUITY_QUOTE_RESULT")
+
+    target = None
+    for row in rows:
+        quote = row.get("quote") if isinstance(row.get("quote"), Mapping) else row
+        symbol = str(quote.get("symbol") or "")
+        if snapshot_symbol and symbol.upper() == snapshot_symbol.upper():
+            target = quote
+            break
+    if target is None:
+        return MarketCheckResult(name, CheckStatus.FAIL, (), "NO_QUOTE_FOR_SNAPSHOT_SYMBOL")
+
+    state = str(target.get("state") or "")
+    if state != "active":
+        return MarketCheckResult(
+            name, CheckStatus.FAIL, (), f"INSTRUMENT_STATE_NOT_ACTIVE:{state or 'UNKNOWN'}",
+        )
+    if target.get("has_traded") is not True:
+        return MarketCheckResult(name, CheckStatus.FAIL, (), "INSTRUMENT_HAS_NOT_TRADED")
+
+    last_trade = _parse_iso_aware(str(target.get("venue_last_trade_time") or ""))
+    if last_trade is None:
+        return MarketCheckResult(name, CheckStatus.FAIL, (), "NO_VENUE_LAST_TRADE_TIME")
+    if last_trade > received:
+        return MarketCheckResult(name, CheckStatus.FAIL, (), "VENUE_LAST_TRADE_IN_FUTURE")
+    age = (received - last_trade).total_seconds()
+    in_session = within_regular_session(received)
+    if in_session and age > maximum_last_trade_age_seconds:
         return MarketCheckResult(
             name, CheckStatus.FAIL, (),
-            f"PROBE_NOT_CONTEMPORANEOUS:{lag:.0f}s>{contemporaneity_seconds}s",
+            f"LAST_TRADE_STALE_IN_SESSION:{age:.0f}s>{maximum_last_trade_age_seconds}s",
         )
-    if snapshot_received_at is not None and received < snapshot_received_at:
-        return MarketCheckResult(name, CheckStatus.FAIL, (), "PROBE_PREDATES_SNAPSHOT")
-
-    result = next(
-        (r for r in _tool_results(envelope) if r.get("tool") == "get_equity_tradability"), None
-    )
-    if result is None:
-        return MarketCheckResult(name, CheckStatus.FAIL, (), "PROBE_HAS_NO_TRADABILITY_RESULT")
-    text = json.dumps(result.get("output"), ensure_ascii=False)
-    # Fail closed on anything that is not an explicit tradable+active reading.
-    tradable = '"tradability": "tradable"' in text or '"tradability":"tradable"' in text
-    active = '"state": "active"' in text or '"state":"active"' in text
-    if not tradable:
-        return MarketCheckResult(name, CheckStatus.FAIL, (), "INSTRUMENT_NOT_TRADABLE")
-    if not active:
-        return MarketCheckResult(name, CheckStatus.FAIL, (), "INSTRUMENT_STATE_NOT_ACTIVE")
     return MarketCheckResult(
         name,
         CheckStatus.PASS,
         (
-            f"probe_snapshot_id={receipt.snapshot_id}",
-            f"symbol={probe_symbol}",
-            "tradability=tradable",
+            f"symbol={target.get('symbol')}",
             "state=active",
-            f"probe_age_seconds={lag:.3f}",
+            "has_traded=true",
+            f"venue_last_trade_time={last_trade.isoformat()}",
+            f"last_trade_age_seconds={age:.3f}",
+            f"regular_session={in_session}",
         ),
         None,
     )
@@ -387,6 +407,22 @@ def _domain_result(name: str, reconciliation: Mapping[str, Any] | None) -> Marke
     return MarketCheckResult(name, CheckStatus.PASS, tuple(evidence), None)
 
 
+def _harvested_or_supplied_session(
+    path: Path,
+    raw_ok: bool,
+    snapshot_symbol: str | None,
+    instrument_session: Mapping[str, Any] | None,
+) -> MarketCheckResult:
+    harvested = _check_session_from_quotes(path, raw_ok, snapshot_symbol)
+    # Only fall back to a typed claim when the snapshot simply has no quote to
+    # read. A harvested FAIL is a real finding and must never be talked over.
+    if harvested.reason in ("NO_EQUITY_QUOTE_RESULT", "DEPENDS_ON_RAW_SNAPSHOT"):
+        supplied = _session_result(instrument_session, snapshot_symbol)
+        if supplied.status is not CheckStatus.UNKNOWN:
+            return supplied
+    return harvested
+
+
 def verify_market_checks(
     snapshot_path: str | Path,
     *,
@@ -397,7 +433,6 @@ def verify_market_checks(
     orders_positions_reconciliation: Mapping[str, Any] | None = None,
     instrument_session: Mapping[str, Any] | None = None,
     fresh_quote_snapshot: str | Path | None = None,
-    session_snapshot: str | Path | None = None,
     adjudicated_at: datetime | None = None,
 ) -> dict[str, MarketCheckResult]:
     """Adjudicate all six market checks deterministically from a raw snapshot.
@@ -449,16 +484,10 @@ def verify_market_checks(
     results = {
         "official_raw_mcp_snapshot": raw,
         "raw_to_feature_reproducibility": _check_reproducibility(path, raw_ok),
-        "official_instrument_session": (
-            _check_session_probe(
-                Path(session_snapshot),
-                adjudicated_at=now,
-                snapshot_symbol=snapshot_symbol,
-                snapshot_received_at=snapshot_received,
-                contemporaneity_seconds=probe_contemporaneity_seconds,
-            )
-            if session_snapshot is not None
-            else _session_result(instrument_session, snapshot_symbol)
+        # Harvested first: the snapshot's own quote is model-independent, so a
+        # typed claim can only ever be a fallback, never an upgrade.
+        "official_instrument_session": _harvested_or_supplied_session(
+            path, raw_ok, snapshot_symbol, instrument_session,
         ),
         "official_account_cash_reconciliation": _domain_result(
             "official_account_cash_reconciliation", account_reconciliation
@@ -480,7 +509,7 @@ def to_evidence_document(results: Mapping[str, MarketCheckResult]) -> dict[str, 
         "official_raw_mcp_snapshot": "HARVESTED_VAULT_SNAPSHOT",
         "raw_to_feature_reproducibility": "HARVESTED_VAULT_SNAPSHOT",
         "fresh_option_quote": "HARVESTED_VAULT_SNAPSHOT_OR_PROBE",
-        "official_instrument_session": "SUPPLIED_EVIDENCE_SELF_REPORTED",
+        "official_instrument_session": "HARVESTED_VAULT_SNAPSHOT",
         "official_account_cash_reconciliation": "SUPPLIED_EVIDENCE_SELF_REPORTED",
         "official_orders_positions_reconciliation": "SUPPLIED_EVIDENCE_SELF_REPORTED",
     }
