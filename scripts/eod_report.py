@@ -209,7 +209,59 @@ def reconstruct_trade(events: list[dict], friction: Decimal) -> dict:
     return record
 
 
-def calibration_result(project_root: Path, day: str, friction: Decimal) -> dict:
+def realistic_cost_view(entry: dict, exit_record: dict, friction_model: dict) -> dict | None:
+    """Recompute the calibration trade's cost with spread and decay included.
+
+    Reported ALONGSIDE the frozen friction number, never instead of it: the
+    frozen constant stays the governed figure, while this shows what the trade
+    actually cost. Returns None when an input is unknown — never estimates.
+    """
+    from datetime import date as _date
+
+    from research.cost_model import round_trip_cost, understatement_ratio
+
+    bid = _decimal(entry.get("entry_bid"))
+    ask = _decimal(entry.get("entry_ask"))
+    expiration = entry.get("expiration_date")
+    entered = _parse_ts(entry.get("entry_observed_at"))
+    exited = _parse_ts(exit_record.get("exit_observed_at"))
+    if bid is None or ask is None or not isinstance(expiration, str) or entered is None:
+        return None
+    try:
+        expiry = _date.fromisoformat(expiration)
+    except ValueError:
+        return None
+    dte = (expiry - entered.date()).days
+    if dte <= 0:
+        return None
+    holding_days = Decimal("0") if exited is None else Decimal(
+        str(max(0.0, (exited - entered).total_seconds() / 86400.0))
+    )
+    try:
+        cost = round_trip_cost(
+            bid=bid, ask=ask, dte_days=dte, holding_days=holding_days,
+            friction_model=friction_model,
+        )
+    except (ValueError, ArithmeticError):
+        return None
+    ratio = understatement_ratio(cost, friction_model)
+    return {
+        **cost.to_dict(),
+        "dte_days": dte,
+        "holding_days": float(round(holding_days, 4)),
+        "frozen_friction_usd": float(Decimal(str(friction_model["per_contract_fee_usd"])) * 2
+                                     + Decimal(str(friction_model["regulatory_exit_fee_usd"]))
+                                     + Decimal(str(friction_model["exit_latency_slippage_ticks"]))
+                                     * Decimal(str(friction_model["option_tick_size_usd"])) * Decimal("100")),
+        "frozen_understated_by_x": None if ratio is None else float(round(ratio, 3)),
+        "note": "Spread + fees + ATM decay (1/(2*DTE) per calendar day). "
+                "The frozen friction_model omits spread and decay entirely.",
+    }
+
+
+def calibration_result(
+    project_root: Path, day: str, friction: Decimal, friction_model: dict | None = None,
+) -> dict:
     """Deterministic P&L for the daily calibration trade (machinery validation).
 
     The pilot agents write only observed quotes (entry at ask, exit at bid);
@@ -273,6 +325,13 @@ def calibration_result(project_root: Path, day: str, friction: Decimal) -> dict:
     result["gross_pnl_usd"] = float(gross)
     result["friction_usd"] = float(friction)
     result["net_pnl_usd"] = float(gross - friction)
+    if friction_model:
+        realistic = realistic_cost_view(entry, exit_record, friction_model)
+        if realistic is not None:
+            result["realistic_cost"] = realistic
+            result["net_pnl_usd_realistic"] = float(
+                gross - Decimal(str(realistic["total_cost_usd"]))
+            )
     return result
 
 
@@ -405,7 +464,9 @@ def build_report(report_date: date, *, project_root: Path = ROOT) -> dict:
             "policy": bucket_totals(policy_trades),
             "research_counterfactual": bucket_totals(research_trades),
         },
-        "calibration_trade": calibration_result(project_root, day, friction),
+        "calibration_trade": calibration_result(
+            project_root, day, friction, safety_config.get("friction_model"),
+        ),
         "bar_time_audit": bar_time_audit(project_root, day),
         "warnings": warnings,
         "evidence_class": "PILOT_EXCLUDED_FROM_PERFORMANCE",
@@ -466,9 +527,21 @@ def render_markdown(report: dict) -> str:
             f"({exit_record.get('holding_minutes')} min, {exit_record.get('exit_reason')})"
         )
         lines.append(
-            f"- gross ${calibration['gross_pnl_usd']:.2f} − friction ${calibration['friction_usd']:.2f} "
-            f"= **net ${calibration['net_pnl_usd']:.2f}**"
+            f"- gross ${calibration['gross_pnl_usd']:.2f} − frozen friction "
+            f"${calibration['friction_usd']:.2f} = **net ${calibration['net_pnl_usd']:.2f}**"
         )
+        realistic = calibration.get("realistic_cost")
+        if realistic:
+            lines.append(
+                f"- realistic cost ${realistic['total_cost_usd']:.2f} "
+                f"({realistic['total_pct_of_premium']:.2f}% of premium: spread "
+                f"${realistic['spread_cost_usd']:.2f} + fees ${realistic['fee_cost_usd']:.2f} + "
+                f"decay ${realistic['decay_cost_usd']:.2f}) — the frozen constant understates by "
+                f"**{realistic['frozen_understated_by_x']}x**"
+            )
+            lines.append(
+                f"- net at realistic cost: **${calibration['net_pnl_usd_realistic']:.2f}**"
+            )
     else:
         lines.append(f"- status: **{calibration.get('status', 'NO_ENTRY')}**")
     lines.append("")

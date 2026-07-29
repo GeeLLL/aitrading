@@ -78,13 +78,32 @@ For a PILOT_SAMPLE run:
    Use current quotes and completed five-minute bars. Do not apply a
    ten-second freshness rule to old lookback bars; only the newest completed
    bar uses the 420-second limit.
-3. Evaluate frozen paired labels BASE_25, BASE_30, AI_RANK_V1, and up to two
-   NEAR_MISS candidates without future data. AI may rank or abstain only.
+3. Evaluate the paired research labels and up to two NEAR_MISS candidates
+   without future data. AI may rank or abstain only. The volume-ratio labels
+   are BASE_18 (volume_ratio >= 1.8) and BASE_21 (>= 2.1), recalibrated
+   2026-07-28: the previous BASE_25 / BASE_30 thresholds (2.5 / 3.0) sit
+   ABOVE the maximum ever observed in 430 recorded symbol-slots (2.3321), so
+   they were structurally incapable of firing and produced no research
+   signal whatsoever. 1.8 and 2.1 sit at roughly the 97.7th and 98.6th
+   percentiles of the observed distribution — selective, but reachable. These
+   are RESEARCH LABELS ONLY: they do not authorise a trade, and the live
+   trading gate remains the frozen 1.50 minimum_volume_ratio.
 4. A policy trade remains limited to one virtual candidate per day. Additional
    candidates are counterfactual research trajectories, not trades.
 5. For every selected contract perform a final instrument-specific quote
    refresh. Preserve bid, ask, mark, source updated_at, local receipt time, IV,
    Greeks, volume, and OI. Missing fields stay null/UNKNOWN.
+   Then record the REAL cost hurdle for that contract by running
+   `python3 main.py cost-hurdle --bid <bid> --ask <ask> --dte <days>
+   --holding-days 1 --delta <delta> --underlying-price <price>` and copy its
+   `total_pct_of_premium` and `breakeven_underlying_move_pct` into the
+   candidate's record. Do not compute these yourself. The frozen
+   `[friction_model]` charges a flat $1.40 and omits BOTH the bid-ask spread
+   and time decay; on real quotes it understates the true cost several-fold
+   (measured 4.3x on the 2026-07-28 calibration trade). A candidate whose
+   breakeven underlying move exceeds what the signal plausibly predicts is
+   not tradable, however good the signal looks — record the number so that
+   judgement rests on evidence rather than on the flat constant.
 6. Simulated entry requires a later observed ask at or below the recorded
    limit, and the fill window MUST be adjudicated inside this same run: the
    frozen policy's `maximum_fill_wait_seconds` is 60, which a 20-minute slot
