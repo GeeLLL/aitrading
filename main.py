@@ -430,6 +430,79 @@ def fresh_quote_probe_command(instrument_ids: list[str]) -> int:
     return 0
 
 
+def evaluate_universe_command(snapshot: str, output: str | None) -> int:
+    """Run the frozen strategy over a vaulted snapshot; no model in the loop."""
+    from research.universe_evaluation import evaluate_snapshot
+
+    try:
+        report = evaluate_snapshot(snapshot, project_root=Path("."))
+    except (OSError, ValueError, KeyError) as error:
+        print(json.dumps({"status": "INVALID", "error": str(error)}, indent=2))
+        return 1
+    if output is not None:
+        destination = Path(output)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        temporary = destination.with_suffix(destination.suffix + ".tmp")
+        temporary.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        temporary.replace(destination)
+    print(json.dumps(report, indent=2, sort_keys=True))
+    return 0 if report.get("status") == "OK" else 2
+
+
+def cost_hurdle_command(
+    bid: str, ask: str, dte: int, holding_days: str,
+    delta: str | None, underlying_price: str | None,
+) -> int:
+    """Deterministic real round-trip cost: spread + fees + ATM time decay."""
+    import tomllib
+    from decimal import Decimal, InvalidOperation
+
+    from research.cost_model import round_trip_cost, understatement_ratio
+
+    try:
+        with open("config/safety.toml", "rb") as handle:
+            friction_model = tomllib.load(handle)["friction_model"]
+        cost = round_trip_cost(
+            bid=Decimal(bid), ask=Decimal(ask), dte_days=dte,
+            holding_days=Decimal(holding_days), friction_model=friction_model,
+        )
+    except (OSError, KeyError, ValueError, InvalidOperation, ArithmeticError) as error:
+        print(json.dumps({"status": "INVALID", "error": str(error)}, indent=2))
+        return 1
+    payload = cost.to_dict()
+    payload["dte_days"] = dte
+    payload["holding_days"] = float(Decimal(holding_days))
+    ratio = understatement_ratio(cost, friction_model)
+    payload["frozen_understated_by_x"] = None if ratio is None else float(round(ratio, 3))
+    if delta is not None and underlying_price is not None:
+        try:
+            move = cost.breakeven_underlying_move_pct(
+                delta=Decimal(delta), underlying_price=Decimal(underlying_price),
+            )
+            payload["breakeven_underlying_move_pct"] = (
+                None if move is None else float(round(move, 4))
+            )
+        except (ValueError, InvalidOperation, ArithmeticError):
+            payload["breakeven_underlying_move_pct"] = None
+    else:
+        payload["breakeven_underlying_move_pct"] = None
+    print(json.dumps(payload, indent=2, sort_keys=True))
+    return 0
+
+
+def validation_power_command(observations: int, trading_days: int | None) -> int:
+    """State plainly what a sample of this size can and cannot establish."""
+    from research.validation_power import assess
+
+    try:
+        report = assess(observations, trading_days=trading_days)
+    except ValueError as error:
+        print(json.dumps({"status": "INVALID", "error": str(error)}, indent=2))
+        return 1
+    print(json.dumps(report.to_dict(), indent=2, sort_keys=True))
+    return 0
+
+
 def bar_time_verify_command(snapshot: str, output: str | None) -> int:
     from monitoring.bar_time_checks import verify_snapshot_bar_times
 
@@ -786,6 +859,12 @@ def parse_args() -> argparse.Namespace:
     hurdle_parser.add_argument("--holding-days", default="1", help="Calendar days held.")
     hurdle_parser.add_argument("--delta", help="Option delta, for the underlying-move hurdle.")
     hurdle_parser.add_argument("--underlying-price", help="Underlying price, same purpose.")
+    universe_parser = subparsers.add_parser(
+        "evaluate-universe",
+        help="Run the frozen strategy deterministically over a raw vault snapshot.",
+    )
+    universe_parser.add_argument("snapshot", help="Path to an immutable raw vault snapshot.")
+    universe_parser.add_argument("--out", help="Write the evaluation JSON here.")
     power_parser = subparsers.add_parser(
         "validation-power",
         help="What a given number of observations can and cannot establish.",
@@ -874,6 +953,8 @@ def main() -> int:
             args.bid, args.ask, args.dte, args.holding_days,
             args.delta, args.underlying_price,
         )
+    if args.command == "evaluate-universe":
+        return evaluate_universe_command(args.snapshot, args.out)
     if args.command == "validation-power":
         return validation_power_command(args.observations, args.trading_days)
     if args.command == "scheduler-ack":
