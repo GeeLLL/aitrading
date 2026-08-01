@@ -5,7 +5,10 @@ import os
 import re
 import shutil
 import subprocess
-from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
+
+SESSION_TIMEZONE = ZoneInfo("America/Los_Angeles")
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 
 from execution.shadow_input import load_shadow_input
@@ -543,6 +546,119 @@ def collect_fresh_option_quote_probe(
         request=request_envelope,
         response={"tool_results": responses},
         source_updated_at=_freshest_source_timestamp(response_texts, not_after=received_at),
+        received_at=received_at,
+    )
+
+
+BARS_PROBE_REQUIRED_TOOLS = frozenset({"get_equity_historicals"})
+BARS_PROBE_MAX_SYMBOLS = 20
+
+
+def bars_probe_arguments(
+    symbols: list[str], session_date: date, *, lookback_days: int = 0,
+) -> dict[str, object]:
+    """Exact get_equity_historicals arguments for the probe.
+
+    The shape is taken from calls this system has actually made successfully
+    (recorded in vaulted request envelopes): bounds, interval, start_time,
+    end_time, symbols. The window spans the prior session as well as the target
+    one, because the frozen policy's 20-bar volume average needs history that
+    early-session bars alone cannot supply.
+    """
+    start = datetime.combine(
+        session_date - timedelta(days=lookback_days), time.min, tzinfo=timezone.utc,
+    )
+    end = datetime.combine(session_date + timedelta(days=1), time.min, tzinfo=timezone.utc)
+    return {
+        "bounds": "regular",
+        "interval": "5minute",
+        "start_time": start.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "end_time": end.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "symbols": symbols,
+    }
+
+
+def collect_universe_bars_probe(
+    symbols: list[str],
+    *,
+    session_date: date | None = None,
+    lookback_days: int = 0,
+    project_root: str | Path = ".",
+    vault_root: str | Path = "logs/raw",
+    timeout_seconds: int = 180,
+) -> RawSnapshotReceipt:
+    """Vault the five-minute bars the strategy will actually decide on.
+
+    Until now the pilot agent pulled bars into its own context and reported the
+    indicators it computed from them, so nothing deterministic could re-derive
+    or even re-check the decision inputs. This probe makes ONE
+    get_equity_historicals call under a single-tool allowlist and stores the
+    response byte-faithfully, letting ``main.py evaluate-universe`` run the
+    frozen strategy over hash-anchored data instead.
+    """
+
+    if not symbols or len(symbols) > BARS_PROBE_MAX_SYMBOLS:
+        raise OfficialCollectorError(
+            f"Bars probe requires 1-{BARS_PROBE_MAX_SYMBOLS} symbols."
+        )
+    normalized = []
+    for symbol in symbols:
+        candidate = str(symbol).strip().upper()
+        if not SYMBOL_PATTERN.fullmatch(candidate):
+            raise OfficialCollectorError(f"Invalid symbol for bars probe: {symbol!r}")
+        if candidate not in normalized:
+            normalized.append(candidate)
+    root = Path(project_root).resolve()
+    target_date = session_date or datetime.now(SESSION_TIMEZONE).date()
+    arguments = bars_probe_arguments(normalized, target_date, lookback_days=lookback_days)
+    prompt = (root / "prompts/robinhood_bars_probe.md").read_text(encoding="utf-8").format(
+        arguments=json.dumps(arguments, indent=2)
+    )
+    command = [
+        claude_binary(),
+        "-p",
+        "--output-format", "stream-json",
+        "--verbose",
+        "--allowedTools", f"mcp__{MCP_SERVER_NAME}__get_equity_historicals",
+        "--disallowedTools", ",".join(EXPLICITLY_DISALLOWED_TOOLS),
+    ]
+    try:
+        completed = subprocess.run(
+            command, input=prompt, text=True, cwd=root, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, timeout=timeout_seconds, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise OfficialCollectorError("Universe bars probe failed or timed out.") from error
+    if completed.returncode != 0:
+        raise OfficialCollectorError(
+            "Universe bars probe returned no valid result. "
+            f"exit={completed.returncode}; "
+            f"{_safe_failure_detail(getattr(completed, 'stderr', None))}"
+        )
+    expected_prefix = f"mcp__{MCP_SERVER_NAME}__"
+    requests, responses, response_texts, _truncated, skipped_lines = _harvest_stream(
+        completed.stdout, expected_prefix, resilient=False,
+        required_tools=BARS_PROBE_REQUIRED_TOOLS,
+    )
+    received_at = datetime.now(timezone.utc)
+    request_envelope: dict[str, object] = {
+        "schema_version": 1,
+        "transport": "CLAUDE_STREAM_JSON_HARVEST",
+        "probe": "UNIVERSE_BARS",
+        "symbols": normalized,
+        "session_date": target_date.isoformat(),
+        "requested_arguments": arguments,
+        "tool_calls": requests,
+        "partial": False,
+    }
+    if skipped_lines:
+        request_envelope["stream_skipped_lines"] = skipped_lines
+    return RawDataVault(root / vault_root).store(
+        source="ROBINHOOD_OFFICIAL_MCP",
+        request=request_envelope,
+        response={"tool_results": responses},
+        source_updated_at=_freshest_source_timestamp(response_texts, not_after=received_at)
+        if response_texts else received_at,
         received_at=received_at,
     )
 

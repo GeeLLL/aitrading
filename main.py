@@ -430,6 +430,35 @@ def fresh_quote_probe_command(instrument_ids: list[str]) -> int:
     return 0
 
 
+def bars_probe_command(symbols: list[str] | None) -> int:
+    """Vault one get_equity_historicals call for the configured universe."""
+    from execution.official_mcp_collector import (
+        OfficialCollectorError,
+        collect_universe_bars_probe,
+    )
+    from strategy.universe import load_universe_policy
+
+    if not symbols:
+        try:
+            symbols = list(load_universe_policy("config/universe.toml")["symbols"])
+        except (OSError, ValueError, KeyError) as error:
+            print(json.dumps({"status": "INVALID", "error": str(error)}, indent=2))
+            return 1
+    try:
+        receipt = collect_universe_bars_probe(symbols)
+    except OfficialCollectorError as error:
+        print(json.dumps({"status": "FAILED_CLOSED", "error": str(error)}, indent=2))
+        return 1
+    print(json.dumps({
+        "status": "STORED",
+        "snapshot_id": receipt.snapshot_id,
+        "content_sha256": receipt.content_sha256,
+        "path": str(receipt.path),
+        "symbols": symbols,
+    }, indent=2, sort_keys=True))
+    return 0
+
+
 def evaluate_universe_command(snapshot: str, output: str | None) -> int:
     """Run the frozen strategy over a vaulted snapshot; no model in the loop."""
     from research.universe_evaluation import evaluate_snapshot
@@ -859,6 +888,14 @@ def parse_args() -> argparse.Namespace:
     hurdle_parser.add_argument("--holding-days", default="1", help="Calendar days held.")
     hurdle_parser.add_argument("--delta", help="Option delta, for the underlying-move hurdle.")
     hurdle_parser.add_argument("--underlying-price", help="Underlying price, same purpose.")
+    bars_probe_parser = subparsers.add_parser(
+        "bars-probe",
+        help="Vault one get_equity_historicals call for the universe (decision inputs).",
+    )
+    bars_probe_parser.add_argument(
+        "symbols", nargs="*",
+        help="Symbols to fetch; defaults to config/universe.toml.",
+    )
     universe_parser = subparsers.add_parser(
         "evaluate-universe",
         help="Run the frozen strategy deterministically over a raw vault snapshot.",
@@ -953,6 +990,8 @@ def main() -> int:
             args.bid, args.ask, args.dte, args.holding_days,
             args.delta, args.underlying_price,
         )
+    if args.command == "bars-probe":
+        return bars_probe_command(args.symbols)
     if args.command == "evaluate-universe":
         return evaluate_universe_command(args.snapshot, args.out)
     if args.command == "validation-power":
