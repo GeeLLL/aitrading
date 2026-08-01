@@ -29,6 +29,7 @@ delegate; it never relaxes a safety check and never backfills a missed sample.
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -134,12 +135,61 @@ def register_todays_expectations(now: datetime, *, directory: str | Path = ROOT 
     return count
 
 
+FIRE_LOG = ROOT / "logs/scheduler/self_arming_fires.jsonl"
+
+
+def _nearest_slot_distance(now: datetime) -> float | None:
+    """Seconds from ``now`` to the closest registered slot (for forensics)."""
+    local = now.astimezone(SESSION_TIMEZONE)
+    distances = [
+        abs((local - local.replace(hour=hour, minute=minute, second=0, microsecond=0)).total_seconds())
+        for (hour, minute) in DAILY_SLOTS
+    ]
+    return min(distances) if distances else None
+
+
+def record_fire(now: datetime, decision: FireDecision) -> None:
+    """Append one line per launchd fire, whatever the outcome.
+
+    A refused fire used to leave NO trace at all: when launchd defers a fire
+    past the 300s match window the wrapper exited 0 silently, so a lost slot
+    could not be attributed afterwards (observed 2026-07-28 11:03 and 11:23).
+    Every fire is now recorded; refusals on a market day are the interesting
+    ones. Best-effort — logging must never prevent a slot from running.
+    """
+    local = now.astimezone(SESSION_TIMEZONE)
+    try:
+        FIRE_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with FIRE_LOG.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps({
+                "at": local.isoformat(),
+                "run": decision.run,
+                "reason": decision.reason,
+                "slot_hhmm": decision.slot_hhmm,
+                "nearest_slot_distance_seconds": _nearest_slot_distance(now),
+                "market_day": is_market_open(local.date()),
+            }, sort_keys=True) + "\n")
+    except OSError:
+        pass
+
+
 def main() -> int:
     now = datetime.now(SESSION_TIMEZONE)
     decision = plan_fire(now)
+    record_fire(now, decision)
     if not decision.run:
-        # Clean, silent no-op: a recurring schedule fires on closed days too, and
-        # a closed-day fire is expected, not an error.
+        # A closed-day fire is expected and harmless. A refusal on a MARKET day
+        # means launchd fired outside the match window (a deferred/coalesced
+        # fire) and a slot was just lost — print it so the launchd stdout log
+        # carries the evidence too. The refusal itself stays correct: a late
+        # fire must never backfill.
+        if is_market_open(now.astimezone(SESSION_TIMEZONE).date()):
+            print(json.dumps({
+                "status": "FIRE_REFUSED_ON_MARKET_DAY",
+                "reason": decision.reason,
+                "at": now.astimezone(SESSION_TIMEZONE).isoformat(),
+                "nearest_slot_distance_seconds": _nearest_slot_distance(now),
+            }, sort_keys=True))
         return 0
 
     # Make the day's misses visible before delegating.

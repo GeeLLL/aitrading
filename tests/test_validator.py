@@ -43,6 +43,8 @@ class OpeningOrderValidatorTests(unittest.TestCase):
             quote_updated_at=NOW - timedelta(seconds=5),
             volume=1000,
             open_interest=1000,
+            strike=Decimal("630"),
+            instrument_id="e3345530-8e0e-42f2-b2ff-cf5cac20d675",
         )
         self.account = AccountSnapshot(
             account_type="cash",
@@ -82,6 +84,18 @@ class OpeningOrderValidatorTests(unittest.TestCase):
         decision = self.evaluate(**overrides)
         self.assertFalse(decision.approved)
         self.assertIn(code, decision.violations)
+
+    def test_intent_without_instrument_id_is_rejected(self) -> None:
+        from dataclasses import replace
+        decision = self.evaluate(intent=replace(self.intent, instrument_id=None))
+        self.assertFalse(decision.approved)
+        self.assertIn("CONTRACT_INSTRUMENT_ID_UNKNOWN", decision.violations)
+
+    def test_intent_without_strike_is_rejected(self) -> None:
+        from dataclasses import replace
+        decision = self.evaluate(intent=replace(self.intent, strike=None))
+        self.assertFalse(decision.approved)
+        self.assertIn("CONTRACT_STRIKE_UNKNOWN", decision.violations)
 
     def test_valid_shadow_candidate_is_approved_for_simulation(self) -> None:
         decision = self.evaluate()

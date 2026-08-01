@@ -5,6 +5,13 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+# The alarm window MUST equal the worker's 180s freshness guard
+# (launchd_shadow_worker._resolve_slot): a fire the worker ACCEPTS as fresh
+# must never be flagged missed/late, and a fire it REFUSES must always be.
+# With the old 120s grace, a 121-179s-late fire collected successfully yet
+# still filed a permanent CRITICAL incident.
+START_ACK_GRACE_SECONDS = 180
+
 
 @dataclass(frozen=True)
 class SchedulerHealth:
@@ -66,7 +73,7 @@ def evaluate_start_ack(
     path: str | Path,
     scheduled_for: datetime,
     checked_at: datetime,
-    grace_seconds: int = 120,
+    grace_seconds: int = START_ACK_GRACE_SECONDS,
     expected_run_id: str | None = None,
 ) -> SchedulerHealth:
     """Fail closed when a scheduled-start acknowledgement is absent or invalid."""

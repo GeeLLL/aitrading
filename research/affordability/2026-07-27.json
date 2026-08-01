@@ -1,0 +1,345 @@
+{
+  "affordability_by_underlying": {
+    "AAL": {
+      "band_affordable": {
+        "100": 14,
+        "120": 14,
+        "300": 14,
+        "75": 9
+      },
+      "band_median_premium_usd": 53.0,
+      "band_min_premium_usd": 32.0,
+      "band_pass_spread": 0,
+      "delta_band": 14,
+      "full_gate_stage1": 0,
+      "observations": 20
+    },
+    "AAPL": {
+      "band_affordable": {
+        "100": 0,
+        "120": 0,
+        "300": 2,
+        "75": 0
+      },
+      "band_median_premium_usd": 605.0,
+      "band_min_premium_usd": 267.5,
+      "band_pass_spread": 13,
+      "delta_band": 24,
+      "full_gate_stage1": 0,
+      "observations": 29
+    },
+    "AMD": {
+      "band_affordable": {
+        "100": 0,
+        "120": 0,
+        "300": 0,
+        "75": 0
+      },
+      "band_median_premium_usd": 2855.0,
+      "band_min_premium_usd": 1862.5,
+      "band_pass_spread": 16,
+      "delta_band": 33,
+      "full_gate_stage1": 0,
+      "observations": 33
+    },
+    "BAC": {
+      "band_affordable": {
+        "100": 9,
+        "120": 11,
+        "300": 13,
+        "75": 6
+      },
+      "band_median_premium_usd": 84.0,
+      "band_min_premium_usd": 42.0,
+      "band_pass_spread": 7,
+      "delta_band": 13,
+      "full_gate_stage1": 3,
+      "observations": 36
+    },
+    "CCL": {
+      "band_affordable": {
+        "100": 12,
+        "120": 14,
+        "300": 16,
+        "75": 8
+      },
+      "band_median_premium_usd": 76.5,
+      "band_min_premium_usd": 43.0,
+      "band_pass_spread": 0,
+      "delta_band": 16,
+      "full_gate_stage1": 0,
+      "observations": 22
+    },
+    "F": {
+      "band_affordable": {
+        "100": 5,
+        "120": 5,
+        "300": 5,
+        "75": 4
+      },
+      "band_median_premium_usd": 50.0,
+      "band_min_premium_usd": 31.0,
+      "band_pass_spread": 1,
+      "delta_band": 5,
+      "full_gate_stage1": 1,
+      "observations": 6
+    },
+    "HOOD": {
+      "band_affordable": {
+        "100": 0,
+        "120": 0,
+        "300": 0,
+        "75": 0
+      },
+      "band_median_premium_usd": 631.5,
+      "band_min_premium_usd": 405.0,
+      "band_pass_spread": 21,
+      "delta_band": 62,
+      "full_gate_stage1": 0,
+      "observations": 64
+    },
+    "INTC": {
+      "band_affordable": {
+        "100": 0,
+        "120": 0,
+        "300": 0,
+        "75": 0
+      },
+      "band_median_premium_usd": 753.0,
+      "band_min_premium_usd": 510.0,
+      "band_pass_spread": 6,
+      "delta_band": 60,
+      "full_gate_stage1": 0,
+      "observations": 60
+    },
+    "IWM": {
+      "band_affordable": {
+        "100": 0,
+        "120": 0,
+        "300": 9,
+        "75": 0
+      },
+      "band_median_premium_usd": 256.25,
+      "band_min_premium_usd": 160.0,
+      "band_pass_spread": 14,
+      "delta_band": 14,
+      "full_gate_stage1": 0,
+      "observations": 35
+    },
+    "META": {
+      "band_affordable": {
+        "100": 0,
+        "120": 0,
+        "300": 0,
+        "75": 0
+      },
+      "band_median_premium_usd": 2767.5,
+      "band_min_premium_usd": 2750.0,
+      "band_pass_spread": 2,
+      "delta_band": 2,
+      "full_gate_stage1": 0,
+      "observations": 2
+    },
+    "MSFT": {
+      "band_affordable": {
+        "100": 0,
+        "120": 0,
+        "300": 0,
+        "75": 0
+      },
+      "band_median_premium_usd": 1462.5,
+      "band_min_premium_usd": 1407.5,
+      "band_pass_spread": 4,
+      "delta_band": 4,
+      "full_gate_stage1": 0,
+      "observations": 4
+    },
+    "NIO": {
+      "band_affordable": {
+        "100": 1,
+        "120": 1,
+        "300": 1,
+        "75": 1
+      },
+      "band_median_premium_usd": 9.0,
+      "band_min_premium_usd": 9.0,
+      "band_pass_spread": 0,
+      "delta_band": 1,
+      "full_gate_stage1": 0,
+      "observations": 6
+    },
+    "NVDA": {
+      "band_affordable": {
+        "100": 0,
+        "120": 0,
+        "300": 0,
+        "75": 0
+      },
+      "band_median_premium_usd": 578.75,
+      "band_min_premium_usd": 567.5,
+      "band_pass_spread": 2,
+      "delta_band": 2,
+      "full_gate_stage1": 0,
+      "observations": 2
+    },
+    "PFE": {
+      "band_affordable": {
+        "100": 7,
+        "120": 8,
+        "300": 8,
+        "75": 6
+      },
+      "band_median_premium_usd": 47.0,
+      "band_min_premium_usd": 18.0,
+      "band_pass_spread": 0,
+      "delta_band": 8,
+      "full_gate_stage1": 0,
+      "observations": 20
+    },
+    "PLTR": {
+      "band_affordable": {
+        "100": 0,
+        "120": 0,
+        "300": 13,
+        "75": 0
+      },
+      "band_median_premium_usd": 401.5,
+      "band_min_premium_usd": 214.0,
+      "band_pass_spread": 45,
+      "delta_band": 50,
+      "full_gate_stage1": 0,
+      "observations": 62
+    },
+    "QQQ": {
+      "band_affordable": {
+        "100": 0,
+        "120": 0,
+        "300": 0,
+        "75": 0
+      },
+      "band_median_premium_usd": 1203.5,
+      "band_min_premium_usd": 1203.5,
+      "band_pass_spread": 3,
+      "delta_band": 3,
+      "full_gate_stage1": 0,
+      "observations": 3
+    },
+    "RIVN": {
+      "band_affordable": {
+        "100": 14,
+        "120": 20,
+        "300": 30,
+        "75": 4
+      },
+      "band_median_premium_usd": 108.0,
+      "band_min_premium_usd": 68.0,
+      "band_pass_spread": 14,
+      "delta_band": 30,
+      "full_gate_stage1": 3,
+      "observations": 30
+    },
+    "SNAP": {
+      "band_affordable": {
+        "100": 6,
+        "120": 6,
+        "300": 6,
+        "75": 6
+      },
+      "band_median_premium_usd": 15.0,
+      "band_min_premium_usd": 14.0,
+      "band_pass_spread": 0,
+      "delta_band": 6,
+      "full_gate_stage1": 0,
+      "observations": 6
+    },
+    "SOFI": {
+      "band_affordable": {
+        "100": 15,
+        "120": 20,
+        "300": 24,
+        "75": 5
+      },
+      "band_median_premium_usd": 94.0,
+      "band_min_premium_usd": 62.0,
+      "band_pass_spread": 21,
+      "delta_band": 24,
+      "full_gate_stage1": 5,
+      "observations": 24
+    },
+    "SPY": {
+      "band_affordable": {
+        "100": 0,
+        "120": 0,
+        "300": 0,
+        "75": 0
+      },
+      "band_median_premium_usd": null,
+      "band_min_premium_usd": null,
+      "band_pass_spread": 0,
+      "delta_band": 0,
+      "full_gate_stage1": 0,
+      "observations": 170
+    },
+    "TSLA": {
+      "band_affordable": {
+        "100": 0,
+        "120": 0,
+        "300": 0,
+        "75": 0
+      },
+      "band_median_premium_usd": 1057.5,
+      "band_min_premium_usd": 1057.5,
+      "band_pass_spread": 1,
+      "delta_band": 1,
+      "full_gate_stage1": 0,
+      "observations": 1
+    },
+    "XLF": {
+      "band_affordable": {
+        "100": 10,
+        "120": 10,
+        "300": 10,
+        "75": 10
+      },
+      "band_median_premium_usd": 41.0,
+      "band_min_premium_usd": 25.0,
+      "band_pass_spread": 0,
+      "delta_band": 10,
+      "full_gate_stage1": 0,
+      "observations": 54
+    }
+  },
+  "caveats": [
+    "Research artifact only \u2014 PILOT_EXCLUDED_FROM_PERFORMANCE.",
+    "SOFI/RIVN/BAC snapshots were collected after hours 2026-07-27: quotes/spreads may not represent regular-session conditions; strikes and open interest are structural.",
+    "volume/open-interest floors not evaluated here where fields were absent from the source record.",
+    "No market data was fetched by this script; it aggregates existing local records only."
+  ],
+  "date": "2026-07-27",
+  "gates": {
+    "delta_band": [
+      "0.30",
+      "0.65"
+    ],
+    "max_relative_spread": "0.05",
+    "premium_caps_usd": [
+      75,
+      100,
+      120,
+      300
+    ]
+  },
+  "generated_at": "2026-07-27T15:22:34.177406-07:00",
+  "quote_observations": 689,
+  "schema_version": 1,
+  "volume_ratio_distribution": {
+    "count_ge_1.5": 16,
+    "count_ge_2.5_BASE_25": 0,
+    "count_ge_3.0_BASE_30": 0,
+    "max": 2.3321,
+    "observations": 290,
+    "p50": 0.7661,
+    "p90": 1.2224,
+    "p99": 2.0776
+  }
+}

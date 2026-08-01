@@ -37,7 +37,7 @@ class SchedulerWatchdogTests(unittest.TestCase):
             result = check_expected_run(
                 run_id="missed",
                 scheduled_for=SCHEDULED,
-                checked_at=SCHEDULED + timedelta(seconds=121),
+                checked_at=SCHEDULED + timedelta(seconds=181),
                 ack_directory=directory,
                 incident_directory=directory,
             )
@@ -54,7 +54,7 @@ class SchedulerWatchdogTests(unittest.TestCase):
             first = check_expected_run(
                 run_id="missed",
                 scheduled_for=SCHEDULED,
-                checked_at=SCHEDULED + timedelta(seconds=121),
+                checked_at=SCHEDULED + timedelta(seconds=181),
                 ack_directory=directory,
                 incident_directory=directory,
             )
@@ -99,7 +99,7 @@ class SchedulerWatchdogTests(unittest.TestCase):
                 directory=expected,
             )
             results = scan_expected_runs(
-                checked_at=SCHEDULED + timedelta(seconds=121),
+                checked_at=SCHEDULED + timedelta(seconds=181),
                 expectation_directory=expected,
                 ack_directory=acks,
                 incident_directory=incidents,
@@ -160,7 +160,7 @@ class SchedulerWatchdogTests(unittest.TestCase):
                 directory=acks,
             )
             results = scan_expected_runs(
-                checked_at=SCHEDULED + timedelta(seconds=121),
+                checked_at=SCHEDULED + timedelta(seconds=181),
                 expectation_directory=expected,
                 ack_directory=acks,
                 incident_directory=incidents,

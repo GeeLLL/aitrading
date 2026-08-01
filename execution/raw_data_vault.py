@@ -116,7 +116,12 @@ class RawDataVault:
         return digest
 
     @staticmethod
-    def verify(path: str | Path, expected_sha256: str | None = None) -> RawSnapshotReceipt:
+    def verify(
+        path: str | Path,
+        expected_sha256: str | None = None,
+        *,
+        require_indexed: bool = False,
+    ) -> RawSnapshotReceipt:
         snapshot_path = Path(path)
         try:
             raw_bytes = snapshot_path.read_bytes()
@@ -140,6 +145,11 @@ class RawDataVault:
         indexed_digest = RawDataVault._index_digest(snapshot_path, str(envelope["snapshot_id"]))
         if indexed_digest is not None and indexed_digest != digest:
             raise ValueError("RAW_SNAPSHOT_INDEX_MISMATCH")
+        if require_indexed and indexed_digest is None:
+            # Gate evidence must come through the vault's own store() path: a
+            # canonically-encoded envelope that was never indexed is exactly
+            # what wholesale fabrication looks like. Fail closed.
+            raise ValueError("RAW_SNAPSHOT_NOT_IN_INDEX")
         if _forbidden(envelope["request"]) or _forbidden(envelope["response"]):
             raise ValueError("RAW_SNAPSHOT_CONTAINS_SENSITIVE_FIELDS")
         return RawSnapshotReceipt(str(envelope["snapshot_id"]), digest, snapshot_path)

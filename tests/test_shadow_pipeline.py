@@ -62,6 +62,7 @@ class ShadowPipelineTests(unittest.TestCase):
             open_interest=5300,
             earnings_date=date(2026, 7, 29),
             quote_received_at=NOW - timedelta(seconds=1),
+            instrument_id="e3345530-8e0e-42f2-b2ff-cf5cac20d675",
         )
         self.account = AccountSnapshot(
             "cash", Decimal("300"), Decimal("300"), 0, 0, 0, 0, 0, 0,

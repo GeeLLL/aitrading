@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 import json
+import os
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from monitoring.scheduler_health import SchedulerHealth, evaluate_start_ack
+from monitoring.scheduler_health import (
+    START_ACK_GRACE_SECONDS,
+    SchedulerHealth,
+    evaluate_start_ack,
+)
 
 
 @dataclass(frozen=True)
@@ -86,7 +92,10 @@ def register_expected_run(
 
 def _atomic_json(path: Path, payload: dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
+    # Unique tmp per writer: three processes (worker, self-arming wrapper,
+    # watchdog) may register the same expectation concurrently; a shared tmp
+    # path lets one writer's replace() race another's write.
+    temporary = path.with_suffix(path.suffix + f".tmp.{os.getpid()}.{uuid.uuid4().hex[:8]}")
     temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     temporary.replace(path)
 
@@ -98,7 +107,7 @@ def check_expected_run(
     checked_at: datetime,
     ack_directory: str | Path = "logs/scheduler",
     incident_directory: str | Path = "logs/incidents",
-    grace_seconds: int = 120,
+    grace_seconds: int = START_ACK_GRACE_SECONDS,
 ) -> WatchdogResult:
     """Audit one expected run and durably record actionable scheduler failures.
 
@@ -152,7 +161,7 @@ def scan_expected_runs(
     expectation_directory: str | Path = "logs/scheduler/expected",
     ack_directory: str | Path = "logs/scheduler",
     incident_directory: str | Path = "logs/incidents",
-    grace_seconds: int = 120,
+    grace_seconds: int = START_ACK_GRACE_SECONDS,
 ) -> tuple[WatchdogResult, ...]:
     """Scan pre-registered expectations; malformed manifests fail closed."""
 

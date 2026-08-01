@@ -5,7 +5,10 @@ import os
 import re
 import shutil
 import subprocess
-from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
+
+SESSION_TIMEZONE = ZoneInfo("America/Los_Angeles")
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 
 from execution.shadow_input import load_shadow_input
@@ -41,6 +44,7 @@ READ_ONLY_ROBINHOOD_TOOLS = (
     "get_option_instruments",
     "get_option_quotes",
     "get_earnings_calendar",
+    "get_equity_tradability",
 )
 
 EXPLICITLY_DISALLOWED_TOOLS = (
@@ -256,7 +260,8 @@ def _result_text(content: object) -> str:
 
 
 def _harvest_stream(
-    stdout: str, expected_prefix: str, *, resilient: bool = False
+    stdout: str, expected_prefix: str, *, resilient: bool = False,
+    required_tools: frozenset[str] = RAW_REQUIRED_TOOLS,
 ) -> tuple[list[dict], list[dict], list[str], tuple[str, ...]]:
     """Parse claude stream-json output into ordered (request, response) pairs.
 
@@ -373,7 +378,7 @@ def _harvest_stream(
         responses.append({"tool": tool, "output": output})
         response_texts.append(text)
     called = {call["tool"] for call in tool_calls}
-    missing = RAW_REQUIRED_TOOLS - called
+    missing = required_tools - called
     if missing:
         raise OfficialCollectorError(
             "Harvested snapshot is incomplete; missing tools: " + ",".join(sorted(missing))
@@ -460,6 +465,200 @@ def collect_official_raw_snapshot(
         request=request_envelope,
         response={"tool_results": responses},
         source_updated_at=_freshest_source_timestamp(response_texts, not_after=received_at),
+        received_at=received_at,
+    )
+
+
+INSTRUMENT_ID_PATTERN = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+PROBE_REQUIRED_TOOLS = frozenset({"get_option_quotes"})
+PROBE_MAX_INSTRUMENTS = 6
+
+
+def collect_fresh_option_quote_probe(
+    instrument_ids: list[str],
+    *,
+    project_root: str | Path = ".",
+    vault_root: str | Path = "logs/raw",
+    timeout_seconds: int = 120,
+) -> RawSnapshotReceipt:
+    """Vault-stored probe proving a FRESH option quote is obtainable right now.
+
+    The six-tool snapshot takes minutes, so its option quotes are structurally
+    aged by collection time — a measurement artifact the fresh_option_quote
+    market check must not confuse with real staleness. This probe makes exactly
+    ONE get_option_quotes call (allowlist contains nothing else) and stores the
+    result through the same immutable vault path, so quote-updated-at versus
+    received_at genuinely measures freshness. Read-only; fails closed on any
+    irregularity; never used as market-sample evidence.
+    """
+
+    if not instrument_ids or len(instrument_ids) > PROBE_MAX_INSTRUMENTS:
+        raise OfficialCollectorError(
+            f"Probe requires 1-{PROBE_MAX_INSTRUMENTS} option instrument ids."
+        )
+    normalized_ids = [str(identifier).strip().lower() for identifier in instrument_ids]
+    for identifier in normalized_ids:
+        if not INSTRUMENT_ID_PATTERN.fullmatch(identifier):
+            raise OfficialCollectorError("Invalid option instrument id for probe.")
+    root = Path(project_root).resolve()
+    prompt = (root / "prompts/robinhood_fresh_quote_probe.md").read_text(encoding="utf-8").format(
+        instrument_ids=", ".join(normalized_ids)
+    )
+    command = [
+        claude_binary(),
+        "-p",
+        "--output-format", "stream-json",
+        "--verbose",
+        "--allowedTools", f"mcp__{MCP_SERVER_NAME}__get_option_quotes",
+        "--disallowedTools", ",".join(EXPLICITLY_DISALLOWED_TOOLS),
+    ]
+    try:
+        completed = subprocess.run(
+            command, input=prompt, text=True, cwd=root, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, timeout=timeout_seconds, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise OfficialCollectorError("Fresh-quote probe failed or timed out.") from error
+    if completed.returncode != 0:
+        raise OfficialCollectorError(
+            "Fresh-quote probe returned no valid result. "
+            f"exit={completed.returncode}; "
+            f"{_safe_failure_detail(getattr(completed, 'stderr', None))}"
+        )
+    expected_prefix = f"mcp__{MCP_SERVER_NAME}__"
+    requests, responses, response_texts, truncated_tools, skipped_lines = _harvest_stream(
+        completed.stdout, expected_prefix, resilient=False,
+        required_tools=PROBE_REQUIRED_TOOLS,
+    )
+    received_at = datetime.now(timezone.utc)
+    request_envelope: dict[str, object] = {
+        "schema_version": 1,
+        "transport": "CLAUDE_STREAM_JSON_HARVEST",
+        "probe": "FRESH_OPTION_QUOTE",
+        "instrument_ids": normalized_ids,
+        "tool_calls": requests,
+        "partial": False,
+    }
+    if skipped_lines:
+        request_envelope["stream_skipped_lines"] = skipped_lines
+    return RawDataVault(root / vault_root).store(
+        source="ROBINHOOD_OFFICIAL_MCP",
+        request=request_envelope,
+        response={"tool_results": responses},
+        source_updated_at=_freshest_source_timestamp(response_texts, not_after=received_at),
+        received_at=received_at,
+    )
+
+
+BARS_PROBE_REQUIRED_TOOLS = frozenset({"get_equity_historicals"})
+BARS_PROBE_MAX_SYMBOLS = 20
+
+
+def bars_probe_arguments(
+    symbols: list[str], session_date: date, *, lookback_days: int = 0,
+) -> dict[str, object]:
+    """Exact get_equity_historicals arguments for the probe.
+
+    The shape is taken from calls this system has actually made successfully
+    (recorded in vaulted request envelopes): bounds, interval, start_time,
+    end_time, symbols. The window spans the prior session as well as the target
+    one, because the frozen policy's 20-bar volume average needs history that
+    early-session bars alone cannot supply.
+    """
+    start = datetime.combine(
+        session_date - timedelta(days=lookback_days), time.min, tzinfo=timezone.utc,
+    )
+    end = datetime.combine(session_date + timedelta(days=1), time.min, tzinfo=timezone.utc)
+    return {
+        "bounds": "regular",
+        "interval": "5minute",
+        "start_time": start.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "end_time": end.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "symbols": symbols,
+    }
+
+
+def collect_universe_bars_probe(
+    symbols: list[str],
+    *,
+    session_date: date | None = None,
+    lookback_days: int = 0,
+    project_root: str | Path = ".",
+    vault_root: str | Path = "logs/raw",
+    timeout_seconds: int = 180,
+) -> RawSnapshotReceipt:
+    """Vault the five-minute bars the strategy will actually decide on.
+
+    Until now the pilot agent pulled bars into its own context and reported the
+    indicators it computed from them, so nothing deterministic could re-derive
+    or even re-check the decision inputs. This probe makes ONE
+    get_equity_historicals call under a single-tool allowlist and stores the
+    response byte-faithfully, letting ``main.py evaluate-universe`` run the
+    frozen strategy over hash-anchored data instead.
+    """
+
+    if not symbols or len(symbols) > BARS_PROBE_MAX_SYMBOLS:
+        raise OfficialCollectorError(
+            f"Bars probe requires 1-{BARS_PROBE_MAX_SYMBOLS} symbols."
+        )
+    normalized = []
+    for symbol in symbols:
+        candidate = str(symbol).strip().upper()
+        if not SYMBOL_PATTERN.fullmatch(candidate):
+            raise OfficialCollectorError(f"Invalid symbol for bars probe: {symbol!r}")
+        if candidate not in normalized:
+            normalized.append(candidate)
+    root = Path(project_root).resolve()
+    target_date = session_date or datetime.now(SESSION_TIMEZONE).date()
+    arguments = bars_probe_arguments(normalized, target_date, lookback_days=lookback_days)
+    prompt = (root / "prompts/robinhood_bars_probe.md").read_text(encoding="utf-8").format(
+        arguments=json.dumps(arguments, indent=2)
+    )
+    command = [
+        claude_binary(),
+        "-p",
+        "--output-format", "stream-json",
+        "--verbose",
+        "--allowedTools", f"mcp__{MCP_SERVER_NAME}__get_equity_historicals",
+        "--disallowedTools", ",".join(EXPLICITLY_DISALLOWED_TOOLS),
+    ]
+    try:
+        completed = subprocess.run(
+            command, input=prompt, text=True, cwd=root, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, timeout=timeout_seconds, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise OfficialCollectorError("Universe bars probe failed or timed out.") from error
+    if completed.returncode != 0:
+        raise OfficialCollectorError(
+            "Universe bars probe returned no valid result. "
+            f"exit={completed.returncode}; "
+            f"{_safe_failure_detail(getattr(completed, 'stderr', None))}"
+        )
+    expected_prefix = f"mcp__{MCP_SERVER_NAME}__"
+    requests, responses, response_texts, _truncated, skipped_lines = _harvest_stream(
+        completed.stdout, expected_prefix, resilient=False,
+        required_tools=BARS_PROBE_REQUIRED_TOOLS,
+    )
+    received_at = datetime.now(timezone.utc)
+    request_envelope: dict[str, object] = {
+        "schema_version": 1,
+        "transport": "CLAUDE_STREAM_JSON_HARVEST",
+        "probe": "UNIVERSE_BARS",
+        "symbols": normalized,
+        "session_date": target_date.isoformat(),
+        "requested_arguments": arguments,
+        "tool_calls": requests,
+        "partial": False,
+    }
+    if skipped_lines:
+        request_envelope["stream_skipped_lines"] = skipped_lines
+    return RawDataVault(root / vault_root).store(
+        source="ROBINHOOD_OFFICIAL_MCP",
+        request=request_envelope,
+        response={"tool_results": responses},
+        source_updated_at=_freshest_source_timestamp(response_texts, not_after=received_at)
+        if response_texts else received_at,
         received_at=received_at,
     )
 

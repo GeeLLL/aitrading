@@ -8,6 +8,11 @@ REPO_ROOT="/Users/ge/ge/aitrading"
 TODAY=$(date +%Y-%m-%d)
 LOG_FILE="${REPO_ROOT}/logs/daily_expectation_registration.log"
 
+# Pin the framework interpreter: bare python3 under cron resolves to Apple's
+# 3.9 (no tomllib), which is exactly what crashed the workers last week.
+PATH="/Library/Frameworks/Python.framework/Versions/3.13/bin:$PATH"
+export PATH
+
 mkdir -p "$(dirname "$LOG_FILE")"
 
 {

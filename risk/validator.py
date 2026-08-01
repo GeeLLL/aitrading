@@ -54,6 +54,14 @@ def evaluate_opening_order(
 
     # This check is intentionally first and fail-closed. The validator does
     # not infer safety from an absent marker or an unavailable supervisor.
+    # Contract identity: the risk layer must never approve an intent whose
+    # contract is unidentified. Defence in depth — the pipeline checks
+    # plausibility against the underlying, this checks presence.
+    if not str(intent.instrument_id or "").strip():
+        violations.append("CONTRACT_INSTRUMENT_ID_UNKNOWN")
+    if intent.strike is None or intent.strike <= 0:
+        violations.append("CONTRACT_STRIKE_UNKNOWN")
+
     if kill_switch_engaged is None:
         violations.append("KILL_SWITCH_STATUS_UNKNOWN")
     elif kill_switch_engaged:

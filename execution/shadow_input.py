@@ -183,6 +183,9 @@ def load_shadow_input(path: str | Path) -> tuple[str, datetime, ShadowSnapshot]:
         _integer(_required(option_raw, "open_interest", "input.option"), "input.option.open_interest"),
         _date(_required(option_raw, "earnings_date", "input.option"), "input.option.earnings_date"),
         _datetime(_required(option_raw, "quote_received_at", "input.option"), "input.option.quote_received_at"),
+        # Contract identity is mandatory: an input that cannot say WHICH
+        # contract it describes must never be evaluable.
+        str(_required(option_raw, "instrument_id", "input.option")),
     )
     snapshot = ShadowSnapshot(
         received_at,

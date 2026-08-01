@@ -28,6 +28,7 @@ from pathlib import Path
 
 from monitoring.daily_schedule import SESSION_TIMEZONE, expected_runs_for_date
 from monitoring.market_calendar import is_market_open
+from monitoring.scheduler_health import START_ACK_GRACE_SECONDS
 from monitoring.scheduler_watchdog import register_expected_run, unresolved_incident_ids
 
 DEFAULT_EXPECTATION_DIR = "logs/scheduler/expected"
@@ -35,17 +36,19 @@ DEFAULT_ACK_DIR = "logs/scheduler"
 DEFAULT_INCIDENT_DIR = "logs/incidents"
 DEFAULT_WORKER_DIR = "logs/launchd_worker"
 
-# A slot is not yet "missed" until this long past its scheduled time (mirrors the
-# watchdog's start-ack grace window).
-GRACE_SECONDS = 120
+# A slot is not yet "missed" until this long past its scheduled time — the
+# shared constant keeps this equal to the worker's freshness guard.
+GRACE_SECONDS = START_ACK_GRACE_SECONDS
 
 # Worker-summary statuses that mean the slot started (wrote an ack) but its
 # collection did NOT succeed. This is how a systemic outage that still "starts"
 # every slot — a dead MCP OAuth, a missing/expired Claude CLI, a network drop —
 # shows up as DEGRADED instead of a day that looks fully healthy because 17 acks
-# exist. "COMPLETED" and the benign "OVERLAP_SKIPPED" are the only non-failures;
-# an unknown status is treated as a failure (fail toward visible).
-_SUCCESS_STATUSES = frozenset({"COMPLETED", "OVERLAP_SKIPPED"})
+# exist. "COMPLETED" is the ONLY non-failure; an unknown status is treated as a
+# failure (fail toward visible). OVERLAP_SKIPPED is deliberately a failure: it
+# means the slot's sample was lost because an earlier worker still held the
+# lock — a hung-worker day previously looked fully healthy through 16 of these.
+_SUCCESS_STATUSES = frozenset({"COMPLETED"})
 
 
 @dataclass(frozen=True)

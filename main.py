@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from datetime import date, datetime
 from pathlib import Path
 
@@ -93,8 +94,34 @@ def shadow_readiness_command(market_checks_path: str | None = None) -> int:
     return 0 if report.offline_ready else 1
 
 
+OWNER_CONFIRMATION_PHRASE = "AUTHORIZE FORMAL SHADOW"
+
+
 def shadow_authorize_command(qualification: str, *, owner_approved: bool) -> int:
     strategy_version = "strategy_v1.0"
+    # Owner-only gate. The unattended agent runs headless with no controlling
+    # terminal, so requiring an interactive TTY plus a typed phrase keeps the
+    # sanctioned path out of its reach. (This is a barrier, not a proof: an
+    # agent with arbitrary `python3` can still write the state file directly —
+    # which is why the watchdog alerts on any change to it. See
+    # monitoring/authorization_watch.py.)
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        print(json.dumps({
+            "status": "REFUSED",
+            "reasons": ["OWNER_APPROVAL_REQUIRES_INTERACTIVE_TTY"],
+        }, indent=2))
+        return 2
+    print(f"Type exactly: {OWNER_CONFIRMATION_PHRASE}")
+    try:
+        typed = input("> ").strip()
+    except EOFError:
+        typed = ""
+    if typed != OWNER_CONFIRMATION_PHRASE:
+        print(json.dumps({
+            "status": "REFUSED",
+            "reasons": ["OWNER_CONFIRMATION_PHRASE_MISMATCH"],
+        }, indent=2))
+        return 2
     try:
         checks = load_p0_qualification(qualification, strategy_version)
         authorization = evaluate_shadow_authorization(
@@ -383,11 +410,167 @@ def raw_collect_command(symbol: str) -> int:
     return 0
 
 
-def market_check_verify_command(snapshot: str, output: str | None) -> int:
-    from monitoring.market_checks import to_evidence_document, verify_market_checks
+def fresh_quote_probe_command(instrument_ids: list[str]) -> int:
+    from execution.official_mcp_collector import (
+        OfficialCollectorError,
+        collect_fresh_option_quote_probe,
+    )
 
     try:
-        results = verify_market_checks(snapshot)
+        receipt = collect_fresh_option_quote_probe(instrument_ids)
+    except OfficialCollectorError as error:
+        print(json.dumps({"status": "FAILED_CLOSED", "error": str(error)}, indent=2))
+        return 1
+    print(json.dumps({
+        "status": "STORED",
+        "snapshot_id": receipt.snapshot_id,
+        "content_sha256": receipt.content_sha256,
+        "path": str(receipt.path),
+    }, indent=2, sort_keys=True))
+    return 0
+
+
+def bars_probe_command(symbols: list[str] | None) -> int:
+    """Vault one get_equity_historicals call for the configured universe."""
+    from execution.official_mcp_collector import (
+        OfficialCollectorError,
+        collect_universe_bars_probe,
+    )
+    from strategy.universe import load_universe_policy
+
+    if not symbols:
+        try:
+            symbols = list(load_universe_policy("config/universe.toml")["symbols"])
+        except (OSError, ValueError, KeyError) as error:
+            print(json.dumps({"status": "INVALID", "error": str(error)}, indent=2))
+            return 1
+    try:
+        receipt = collect_universe_bars_probe(symbols)
+    except OfficialCollectorError as error:
+        print(json.dumps({"status": "FAILED_CLOSED", "error": str(error)}, indent=2))
+        return 1
+    print(json.dumps({
+        "status": "STORED",
+        "snapshot_id": receipt.snapshot_id,
+        "content_sha256": receipt.content_sha256,
+        "path": str(receipt.path),
+        "symbols": symbols,
+    }, indent=2, sort_keys=True))
+    return 0
+
+
+def evaluate_universe_command(snapshot: str, output: str | None) -> int:
+    """Run the frozen strategy over a vaulted snapshot; no model in the loop."""
+    from research.universe_evaluation import evaluate_snapshot
+
+    try:
+        report = evaluate_snapshot(snapshot, project_root=Path("."))
+    except (OSError, ValueError, KeyError) as error:
+        print(json.dumps({"status": "INVALID", "error": str(error)}, indent=2))
+        return 1
+    if output is not None:
+        destination = Path(output)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        temporary = destination.with_suffix(destination.suffix + ".tmp")
+        temporary.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        temporary.replace(destination)
+    print(json.dumps(report, indent=2, sort_keys=True))
+    return 0 if report.get("status") == "OK" else 2
+
+
+def cost_hurdle_command(
+    bid: str, ask: str, dte: int, holding_days: str,
+    delta: str | None, underlying_price: str | None,
+) -> int:
+    """Deterministic real round-trip cost: spread + fees + ATM time decay."""
+    import tomllib
+    from decimal import Decimal, InvalidOperation
+
+    from research.cost_model import round_trip_cost, understatement_ratio
+
+    try:
+        with open("config/safety.toml", "rb") as handle:
+            friction_model = tomllib.load(handle)["friction_model"]
+        cost = round_trip_cost(
+            bid=Decimal(bid), ask=Decimal(ask), dte_days=dte,
+            holding_days=Decimal(holding_days), friction_model=friction_model,
+        )
+    except (OSError, KeyError, ValueError, InvalidOperation, ArithmeticError) as error:
+        print(json.dumps({"status": "INVALID", "error": str(error)}, indent=2))
+        return 1
+    payload = cost.to_dict()
+    payload["dte_days"] = dte
+    payload["holding_days"] = float(Decimal(holding_days))
+    ratio = understatement_ratio(cost, friction_model)
+    payload["frozen_understated_by_x"] = None if ratio is None else float(round(ratio, 3))
+    if delta is not None and underlying_price is not None:
+        try:
+            move = cost.breakeven_underlying_move_pct(
+                delta=Decimal(delta), underlying_price=Decimal(underlying_price),
+            )
+            payload["breakeven_underlying_move_pct"] = (
+                None if move is None else float(round(move, 4))
+            )
+        except (ValueError, InvalidOperation, ArithmeticError):
+            payload["breakeven_underlying_move_pct"] = None
+    else:
+        payload["breakeven_underlying_move_pct"] = None
+    print(json.dumps(payload, indent=2, sort_keys=True))
+    return 0
+
+
+def validation_power_command(observations: int, trading_days: int | None) -> int:
+    """State plainly what a sample of this size can and cannot establish."""
+    from research.validation_power import assess
+
+    try:
+        report = assess(observations, trading_days=trading_days)
+    except ValueError as error:
+        print(json.dumps({"status": "INVALID", "error": str(error)}, indent=2))
+        return 1
+    print(json.dumps(report.to_dict(), indent=2, sort_keys=True))
+    return 0
+
+
+def bar_time_verify_command(snapshot: str, output: str | None) -> int:
+    from monitoring.bar_time_checks import verify_snapshot_bar_times
+
+    report = verify_snapshot_bar_times(snapshot)
+    if output is not None:
+        destination = Path(output)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        temporary = destination.with_suffix(destination.suffix + ".tmp")
+        temporary.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        temporary.replace(destination)
+    print(json.dumps(report, indent=2, sort_keys=True))
+    return 0 if report.get("status") == "PASS" else 2
+
+
+def market_check_verify_command(
+    snapshot: str,
+    output: str | None,
+    evidence_path: str | None = None,
+    fresh_quote_snapshot: str | None = None,
+) -> int:
+    from monitoring.market_checks import to_evidence_document, verify_market_checks
+
+    evidence = {}
+    if evidence_path is not None:
+        try:
+            evidence = json.loads(Path(evidence_path).read_text(encoding="utf-8"))
+            if not isinstance(evidence, dict):
+                raise ValueError("evidence file must contain a JSON object")
+        except (OSError, ValueError, json.JSONDecodeError) as error:
+            print(json.dumps({"status": "INVALID", "error": f"evidence: {error}"}, indent=2))
+            return 1
+    try:
+        results = verify_market_checks(
+            snapshot,
+            account_reconciliation=evidence.get("account_reconciliation"),
+            orders_positions_reconciliation=evidence.get("orders_positions_reconciliation"),
+            instrument_session=evidence.get("instrument_session"),
+            fresh_quote_snapshot=fresh_quote_snapshot,
+        )
     except (OSError, ValueError) as error:
         print(json.dumps({"status": "INVALID", "error": str(error)}, indent=2))
         return 1
@@ -674,6 +857,57 @@ def parse_args() -> argparse.Namespace:
     market_check_parser.add_argument(
         "--out", help="Write the evidence document (feed to shadow-readiness --market-checks)."
     )
+    market_check_parser.add_argument(
+        "--evidence",
+        help="JSON file with separately-obtained live evidence: account_reconciliation, "
+        "orders_positions_reconciliation, instrument_session (fail-closed validated).",
+    )
+    market_check_parser.add_argument(
+        "--fresh-quote-snapshot",
+        help="Vault path of a fresh-quote probe snapshot (from fresh-quote-probe) to "
+        "adjudicate fresh_option_quote at its own receipt time.",
+    )
+    probe_parser = subparsers.add_parser(
+        "fresh-quote-probe",
+        help="Store a single-call get_option_quotes probe in the vault (freshness evidence).",
+    )
+    probe_parser.add_argument("instrument_ids", nargs="+", help="1-6 option instrument ids.")
+    bar_time_parser = subparsers.add_parser(
+        "bar-time-verify",
+        help="Deterministically verify bar ordering/interval/freshness in a raw snapshot.",
+    )
+    bar_time_parser.add_argument("snapshot", help="Path to an immutable raw vault snapshot.")
+    bar_time_parser.add_argument("--out", help="Write the report JSON here.")
+    hurdle_parser = subparsers.add_parser(
+        "cost-hurdle",
+        help="Real round-trip cost of a long option: spread + fees + ATM time decay.",
+    )
+    hurdle_parser.add_argument("--bid", required=True)
+    hurdle_parser.add_argument("--ask", required=True)
+    hurdle_parser.add_argument("--dte", required=True, type=int, help="Calendar days to expiry.")
+    hurdle_parser.add_argument("--holding-days", default="1", help="Calendar days held.")
+    hurdle_parser.add_argument("--delta", help="Option delta, for the underlying-move hurdle.")
+    hurdle_parser.add_argument("--underlying-price", help="Underlying price, same purpose.")
+    bars_probe_parser = subparsers.add_parser(
+        "bars-probe",
+        help="Vault one get_equity_historicals call for the universe (decision inputs).",
+    )
+    bars_probe_parser.add_argument(
+        "symbols", nargs="*",
+        help="Symbols to fetch; defaults to config/universe.toml.",
+    )
+    universe_parser = subparsers.add_parser(
+        "evaluate-universe",
+        help="Run the frozen strategy deterministically over a raw vault snapshot.",
+    )
+    universe_parser.add_argument("snapshot", help="Path to an immutable raw vault snapshot.")
+    universe_parser.add_argument("--out", help="Write the evaluation JSON here.")
+    power_parser = subparsers.add_parser(
+        "validation-power",
+        help="What a given number of observations can and cannot establish.",
+    )
+    power_parser.add_argument("observations", type=int)
+    power_parser.add_argument("--trading-days", type=int)
     ack_parser = subparsers.add_parser(
         "scheduler-ack", help="Atomically record proof that a scheduled task started."
     )
@@ -744,7 +978,24 @@ def main() -> int:
     if args.command == "raw-verify":
         return raw_verify_command(args.path, args.sha256)
     if args.command == "market-check-verify":
-        return market_check_verify_command(args.snapshot, args.out)
+        return market_check_verify_command(
+            args.snapshot, args.out, args.evidence, args.fresh_quote_snapshot,
+        )
+    if args.command == "fresh-quote-probe":
+        return fresh_quote_probe_command(args.instrument_ids)
+    if args.command == "bar-time-verify":
+        return bar_time_verify_command(args.snapshot, args.out)
+    if args.command == "cost-hurdle":
+        return cost_hurdle_command(
+            args.bid, args.ask, args.dte, args.holding_days,
+            args.delta, args.underlying_price,
+        )
+    if args.command == "bars-probe":
+        return bars_probe_command(args.symbols)
+    if args.command == "evaluate-universe":
+        return evaluate_universe_command(args.snapshot, args.out)
+    if args.command == "validation-power":
+        return validation_power_command(args.observations, args.trading_days)
     if args.command == "scheduler-ack":
         return scheduler_ack_command(args.run_id, args.scheduled_for)
     if args.command == "scheduler-check":

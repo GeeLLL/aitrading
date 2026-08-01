@@ -18,6 +18,9 @@ from journal.evidence_eligibility import classify_shadow_evidence
 
 
 PILOT_ROOT = ROOT / "logs" / "pilot"
+# Current launchd agents write their summaries under logs/launchd_worker/<date>/;
+# logs/pilot is the pre-launchd location, kept for history.
+WORKER_ROOT = ROOT / "logs" / "launchd_worker"
 SCHEDULER_ROOT = ROOT / "logs" / "scheduler"
 INCIDENT_ROOT = ROOT / "logs" / "incidents"
 OUTPUT = ROOT / "dashboard" / "index.html"
@@ -32,7 +35,8 @@ def load_json(path: Path) -> dict:
 
 def collect() -> dict:
     readiness = build_shadow_readiness(root=ROOT).to_dict()
-    summaries = [load_json(path) for path in sorted(PILOT_ROOT.glob("**/*.summary.json"))]
+    summary_paths = sorted(PILOT_ROOT.glob("**/*.summary.json")) + sorted(WORKER_ROOT.glob("**/*.summary.json"))
+    summaries = [load_json(path) for path in summary_paths]
     summaries = [item for item in summaries if item]
     starts = [load_json(path) for path in sorted(SCHEDULER_ROOT.glob("pilot-*.start.json"))]
     starts = [item for item in starts if item]

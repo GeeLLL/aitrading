@@ -30,7 +30,7 @@
     "event_type": {"enum": ["CANDIDATE", "QUOTE", "HORIZON_CLOSE", "DATA_ERROR"]},
     "policy_labels": {
       "type": "array",
-      "items": {"enum": ["BASE_25", "BASE_30", "AI_RANK_V1", "NEAR_MISS"]},
+      "items": {"enum": ["BASE_18", "BASE_21", "BASE_25", "BASE_30", "AI_RANK_V1", "NEAR_MISS"]},
       "minItems": 1,
       "uniqueItems": true
     },
@@ -52,6 +52,15 @@
     "theta": {"type": ["number", "null"]},
     "target_horizon_minutes": {"type": ["integer", "null"], "minimum": 0},
     "rejection_reasons": {"type": "array", "items": {"type": "string"}},
+    "limit_price": {"type": ["number", "null"], "exclusiveMinimum": 0},
+    "limit_recorded_at": {"type": ["string", "null"], "format": "date-time"},
+    "fill_window_deadline": {"type": ["string", "null"], "format": "date-time"},
+    "fill_adjudication": {
+      "type": ["string", "null"],
+      "enum": ["SIMULATED_FILL", "NO_FILL_WINDOW_EXPIRED", "FILL_WINDOW_NOT_ADJUDICABLE", null]
+    },
+    "cost_hurdle_total_pct_of_premium": {"type": ["number", "null"]},
+    "cost_hurdle_breakeven_underlying_move_pct": {"type": ["number", "null"]},
     "evidence_class": {"const": "PILOT_OBSERVED_QUOTE_EXCLUDED_FROM_PERFORMANCE"}
   }
 }
