@@ -33,8 +33,16 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from monitoring.daily_schedule import SESSION_TIMEZONE, expected_runs_for_date
+from strategy.policy_labels import load_policy_labels
 
-POLICY_LABELS = {"BASE_25", "BASE_30", "AI_RANK_V1"}
+# Loaded from the frozen registry (config/policy_labels.toml) so this report can
+# never again drift from the labels the pilot actually records. The registry's
+# retired policy labels stay in the classification set, so historical
+# trajectories (BASE_25/BASE_30 era) keep counting as policy-of-their-era.
+# Before this, POLICY_LABELS was hardcoded to the retired set while the pilot
+# emitted BASE_18/BASE_21 — making the daily policy PnL structurally zero.
+_LABEL_REGISTRY = load_policy_labels(ROOT)
+POLICY_LABELS = set(_LABEL_REGISTRY.policy_for_classification)
 SUCCESS_STATUSES = {"COMPLETED"}
 
 # The frozen policy's fill window (strategy_v1.0 maximum_fill_wait_seconds),
@@ -460,6 +468,23 @@ def build_report(report_date: date, *, project_root: Path = ROOT) -> dict:
     policy_trades = [trade for trade in trades if is_policy(trade)]
     research_trades = [trade for trade in trades if not is_policy(trade)]
 
+    # Per-label counts and fill-adjudication histogram: makes label drift and a
+    # structurally-empty policy bucket immediately visible in the daily report.
+    label_counts: dict[str, int] = {}
+    adjudication_counts: dict[str, int] = {}
+    for trade in trades:
+        for label in trade.get("policy_labels") or []:
+            label_counts[str(label)] = label_counts.get(str(label), 0) + 1
+        outcome = str(trade.get("outcome") or "UNKNOWN")
+        adjudication_counts[outcome] = adjudication_counts.get(outcome, 0) + 1
+    unknown_labels = sorted(
+        label for label in label_counts
+        if label not in POLICY_LABELS
+        and label not in _LABEL_REGISTRY.research
+    )
+    if unknown_labels:
+        warnings.append(f"UNREGISTERED_POLICY_LABELS:{','.join(unknown_labels)}")
+
     def bucket_totals(bucket: list[dict]) -> dict:
         realized = [trade for trade in bucket if trade["net_pnl_usd"] is not None]
         return {
@@ -485,6 +510,9 @@ def build_report(report_date: date, *, project_root: Path = ROOT) -> dict:
             "policy": policy_trades,
             "research_counterfactual": research_trades,
         },
+        "policy_label_registry_version": _LABEL_REGISTRY.version,
+        "policy_label_counts": label_counts,
+        "fill_adjudications": adjudication_counts,
         "pnl": {
             "friction_model": "CONSERVATIVE_UNCALIBRATED",
             "round_trip_friction_usd": float(friction),

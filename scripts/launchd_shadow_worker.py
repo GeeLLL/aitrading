@@ -317,6 +317,79 @@ def _run_agent_once(
                 _kill_process_group(process.pid)
 
 
+def _run_deterministic_slot(
+    *,
+    run_id: str,
+    kind: str,
+    symbol: str,
+    scheduled: datetime,
+    now: datetime,
+    ack_path: Path,
+    log_root: Path,
+    summary_path: Path,
+) -> int:
+    """Run PILOT_SAMPLE / CLOSE_SUMMARY through the deterministic pipelines.
+
+    Keeps the exact worker-summary contract the watchdog, observer, and EOD
+    report already consume; only agent_runtime changes, so a day of mixed
+    agent/deterministic runs stays comparable.
+    """
+    from scripts.deterministic_slots import run_close_summary, run_pilot_sample
+
+    started = datetime.now(timezone.utc)
+    try:
+        if kind == "PILOT_SAMPLE":
+            pipeline_summary = run_pilot_sample(
+                run_id=run_id,
+                scheduled=scheduled,
+                now=now,
+                log_root=log_root,
+                trajectory_root=ROOT / "logs/quote_trajectories" / now.astimezone(LOCAL).date().isoformat(),
+                project_root=ROOT,
+            )
+        else:
+            pipeline_summary = run_close_summary(
+                run_id=run_id,
+                scheduled=scheduled,
+                now=now,
+                log_root=log_root,
+                project_root=ROOT,
+            )
+        result_status = str(pipeline_summary.get("status") or "FAILED_CLOSED")
+        return_code = 0 if result_status == "COMPLETED" else 2
+    except Exception as error:  # a pipeline crash must still leave a receipt
+        result_status = "PIPELINE_EXCEPTION"
+        return_code = 2
+        _atomic_json(log_root / f"{run_id}.pipeline-error.json", {
+            "run_id": run_id,
+            "error": f"{type(error).__name__}: {error}",
+        })
+    ended = datetime.now(timezone.utc)
+    _atomic_json(summary_path, {
+        "schema_version": 1,
+        "status": result_status if result_status in ("COMPLETED",) else (
+            "AGENT_FAILED" if result_status == "PIPELINE_EXCEPTION" else result_status
+        ),
+        "run_id": run_id,
+        "kind": kind,
+        "symbol": symbol,
+        "scheduled_for": scheduled.astimezone(timezone.utc).isoformat(),
+        "ack_path": str(ack_path),
+        "started_at": started.isoformat(),
+        "ended_at": ended.isoformat(),
+        "duration_seconds": (ended - started).total_seconds(),
+        "attempts": 1,
+        "agent_runtime": "DETERMINISTIC_PYTHON",
+        "agent_return_code": return_code,
+        "read_only": True,
+        "live_trading_enabled": False,
+        "order_tools_enabled": False,
+        "evidence_class": "PILOT_EXCLUDED_FROM_PERFORMANCE",
+    })
+    _rebuild_dashboard()
+    return 0 if return_code == 0 else 2
+
+
 def _execute_slot(
     *,
     run_id: str,
@@ -340,6 +413,16 @@ def _execute_slot(
 
     if kind == "CANARY":
         return _run_canary(run_id, symbol, ack_path, log_root)
+
+    # PILOT_SAMPLE and CLOSE_SUMMARY run deterministically — no agent, no
+    # prompt, identical inputs produce identical outputs. Only MARKET_GATE
+    # still takes the agent path below (its account-domain reconciliation
+    # needs MCP account tools the transport-only collectors exclude).
+    if kind in ("PILOT_SAMPLE", "CLOSE_SUMMARY"):
+        return _run_deterministic_slot(
+            run_id=run_id, kind=kind, symbol=symbol, scheduled=scheduled,
+            now=now, ack_path=ack_path, log_root=log_root, summary_path=summary_path,
+        )
 
     prompt = (ROOT / "prompts/launchd_pilot_worker.md").read_text(encoding="utf-8").format(
         run_id=run_id,
@@ -423,20 +506,6 @@ def _execute_slot(
         "order_tools_enabled": False,
         "evidence_class": "PILOT_EXCLUDED_FROM_PERFORMANCE",
     })
-
-    if kind == "CLOSE_SUMMARY":
-        # Deterministic end-of-day report: runs regardless of how the agent
-        # fared, so the day always ends with an auditable P&L/coverage record.
-        subprocess.run(
-            [
-                sys.executable,
-                str(ROOT / "scripts/eod_report.py"),
-                "--date", now.astimezone(LOCAL).date().isoformat(),
-            ],
-            cwd=ROOT,
-            timeout=120,
-            check=False,
-        )
 
     _rebuild_dashboard()
     return 0 if return_code == 0 else 2

@@ -41,3 +41,4 @@ AUTOMATION_*.md
 !monitoring/data_integrity_validator.py
 !monitoring/market_calendar.py
 !monitoring/active_shadow_monitor.py
+state/secrets/
