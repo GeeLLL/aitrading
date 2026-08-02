@@ -128,6 +128,72 @@ def load_trajectories(trajectory_dir: Path, warnings: list[str]) -> dict[str, li
     return groups
 
 
+def fill_window_dual_clock_audit(groups: dict[str, list[dict]]) -> dict:
+    """Per-window elapsed time on BOTH clocks: local receipt vs venue update.
+
+    Adjudication stays on the local receipt clock (authoritative, cannot be
+    spoofed by upstream timestamps), but collection latency eats into the 60s
+    window on that clock, systematically biasing toward NO_FILL. This audit
+    quantifies that bias: a window where the venue clock would have filled but
+    the receipt clock did not is flagged, so the bias is measured, not hidden.
+    (Ported from the ad-hoc 07-29 close analysis into the canonical report.)
+    """
+    windows: list[dict] = []
+    for trajectory_id, events in sorted(groups.items()):
+        candidate = next(
+            (event for event in events
+             if event.get("event_type") == "CANDIDATE" and not event.get("rejection_reasons")),
+            None,
+        )
+        if candidate is None:
+            continue
+        limit = _decimal(candidate.get("limit_price")
+                         if candidate.get("limit_price") is not None else candidate.get("ask"))
+        recorded = _parse_ts(candidate.get("limit_recorded_at")) or _parse_ts(candidate.get("quote_received_at"))
+        deadline = _parse_ts(candidate.get("fill_window_deadline"))
+        candidate_source = _parse_ts(candidate.get("source_updated_at"))
+        if limit is None or recorded is None or deadline is None:
+            continue
+        window_seconds = (deadline - recorded).total_seconds()
+        for quote in (event for event in events if event.get("event_type") == "QUOTE"):
+            quote_received = _parse_ts(quote.get("quote_received_at"))
+            quote_source = _parse_ts(quote.get("source_updated_at"))
+            ask = _decimal(quote.get("ask"))
+            if quote_received is None or ask is None:
+                continue
+            receipt_elapsed = (quote_received - recorded).total_seconds()
+            venue_elapsed = (
+                (quote_source - candidate_source).total_seconds()
+                if quote_source is not None and candidate_source is not None else None
+            )
+            in_receipt = receipt_elapsed <= window_seconds + FILL_WINDOW_SKEW_SECONDS
+            in_venue = (
+                venue_elapsed is not None
+                and venue_elapsed <= window_seconds + FILL_WINDOW_SKEW_SECONDS
+            )
+            would_fill = ask <= limit
+            windows.append({
+                "trajectory_id": trajectory_id,
+                "receipt_elapsed_seconds": receipt_elapsed,
+                "venue_elapsed_seconds": venue_elapsed,
+                "ask_at_or_below_limit": bool(would_fill),
+                "in_window_receipt_clock": bool(in_receipt),
+                "in_window_venue_clock": bool(in_venue),
+                "clock_divergence_changes_outcome": bool(would_fill and in_venue and not in_receipt),
+            })
+    return {
+        "windows": windows,
+        "clock_divergence_count": sum(
+            1 for window in windows if window["clock_divergence_changes_outcome"]
+        ),
+        "note": (
+            "Adjudication uses the local receipt clock (authoritative). The venue-clock "
+            "view quantifies collection-latency bias toward NO_FILL; it never changes "
+            "the adjudicated outcome."
+        ),
+    }
+
+
 def reconstruct_trade(events: list[dict], friction: Decimal) -> dict:
     """Deterministically replay one trajectory's events into a virtual-trade record.
 
@@ -513,6 +579,7 @@ def build_report(report_date: date, *, project_root: Path = ROOT) -> dict:
         "policy_label_registry_version": _LABEL_REGISTRY.version,
         "policy_label_counts": label_counts,
         "fill_adjudications": adjudication_counts,
+        "fill_window_audit": fill_window_dual_clock_audit(groups),
         "pnl": {
             "friction_model": "CONSERVATIVE_UNCALIBRATED",
             "round_trip_friction_usd": float(friction),

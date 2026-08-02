@@ -60,6 +60,57 @@ from strategy.universe import load_universe_policy
 MAX_PROBE_INSTRUMENTS = 6   # fresh-quote-probe CLI bound
 
 
+def _use_direct_transport() -> bool:
+    """Direct (LLM-free) MCP transport is an explicit opt-in: the owner sets
+    ROBINHOOD_TRANSPORT=direct only after the Mac-side OAuth login and a passing
+    A/B against the CLI path. Never switches silently."""
+    import os
+    from execution.mcp_oauth import DEFAULT_CACHE_PATH
+
+    return (
+        os.environ.get("ROBINHOOD_TRANSPORT") == "direct"
+        and (ROOT / DEFAULT_CACHE_PATH).is_file()
+    )
+
+
+def _direct_token_provider():
+    from execution.mcp_oauth import DEFAULT_CACHE_PATH, OAuthTokenProvider, TokenCache, discover
+    from execution.robinhood_direct_collector import ROBINHOOD_MCP_ENDPOINT
+
+    metadata = discover(ROBINHOOD_MCP_ENDPOINT)
+    return OAuthTokenProvider(metadata, TokenCache(ROOT / DEFAULT_CACHE_PATH))
+
+
+def _collect_bars(symbols: list[str], project_root: Path):
+    if _use_direct_transport():
+        from execution.robinhood_direct_collector import collect_universe_bars_probe_direct
+
+        return collect_universe_bars_probe_direct(
+            symbols, token_provider=_direct_token_provider(), project_root=project_root,
+        )
+    return collect_universe_bars_probe(symbols, project_root=project_root)
+
+
+def _collect_quote_probe(instrument_ids: list[str], project_root: Path):
+    if _use_direct_transport():
+        from execution.robinhood_direct_collector import collect_fresh_option_quote_probe_direct
+
+        return collect_fresh_option_quote_probe_direct(
+            instrument_ids, token_provider=_direct_token_provider(), project_root=project_root,
+        )
+    return collect_fresh_option_quote_probe(instrument_ids, project_root=project_root)
+
+
+def _collect_snapshot(symbol: str, project_root: Path):
+    if _use_direct_transport():
+        from execution.robinhood_direct_collector import collect_official_raw_snapshot_direct
+
+        return collect_official_raw_snapshot_direct(
+            symbol, token_provider=_direct_token_provider(), project_root=project_root,
+        )
+    return collect_official_raw_snapshot(symbol, project_root=project_root, resilient=True)
+
+
 def _atomic_json(path: Path, payload: dict[str, Any]) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
@@ -104,7 +155,7 @@ def run_pilot_sample(
         "steps": [],
         "evidence_class": "PILOT_EXCLUDED_FROM_PERFORMANCE",
         "read_only": True,
-        "mcp_transport": "CLAUDE_CLI",
+        "mcp_transport": "PYTHON_DIRECT_MCP" if _use_direct_transport() else "CLAUDE_CLI",
     }
     steps: list[dict[str, Any]] = summary["steps"]
 
@@ -117,7 +168,7 @@ def run_pilot_sample(
     # 1. Bars probe over the frozen universe.
     try:
         symbols = list(load_universe_policy(str(project_root / "config/universe.toml"))["symbols"])
-        bars_receipt = collect_universe_bars_probe(symbols, project_root=project_root)
+        bars_receipt = _collect_bars(symbols, project_root)
         steps.append({"step": "BARS_PROBE", "ok": True, "snapshot": str(bars_receipt.path),
                       "sha256": bars_receipt.content_sha256, "symbols": symbols})
     except (OfficialCollectorError, OSError, ValueError, KeyError) as error:
@@ -149,7 +200,7 @@ def run_pilot_sample(
             str(target["candidate"].get("instrument_id") or "") for target in targets
         } - {""})[:MAX_PROBE_INSTRUMENTS]
         try:
-            probe_receipt = collect_fresh_option_quote_probe(instrument_ids, project_root=project_root)
+            probe_receipt = _collect_quote_probe(instrument_ids, project_root)
             probe_envelope = _read_envelope(probe_receipt.path)
             probe_quotes = option_quotes_by_instrument(probe_envelope)
             probe_received = _received_at(probe_envelope)
@@ -194,9 +245,7 @@ def run_pilot_sample(
         )
         if labels:
             try:
-                option_receipt = collect_official_raw_snapshot(
-                    target_symbol, project_root=project_root, resilient=True,
-                )
+                option_receipt = _collect_snapshot(target_symbol, project_root)
                 envelope = _read_envelope(option_receipt.path)
                 underlying_price = underlying_last_trade(envelope, target_symbol)
                 selection = (

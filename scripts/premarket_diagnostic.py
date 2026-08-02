@@ -125,8 +125,8 @@ class PremarketDiagnostic:
         self.print_header("4️⃣  Cron Tasks")
 
         self.check(
-            "Cron tasks loaded",
-            lambda: self._check_cron_tasks(),
+            "No stale cron entries (launchd is the only scheduler)",
+            lambda: self._check_no_stale_cron(),
             critical=False
         )
 
@@ -268,8 +268,8 @@ class PremarketDiagnostic:
             print(f"      Error: {e}")
             return False
 
-    def _check_cron_tasks(self) -> bool:
-        """检查 Cron 任务"""
+    def _check_no_stale_cron(self) -> bool:
+        """cron 已废除:self-arming launchd 是唯一调度器,残留 cron 条目会重复触发"""
         try:
             result = subprocess.run(
                 "crontab -l 2>/dev/null | grep -c launchd_shadow_worker",
@@ -279,9 +279,10 @@ class PremarketDiagnostic:
                 timeout=5
             )
             count = int(result.stdout.strip() or "0")
-            print(f"   Found {count} cron tasks")
-            return count >= 3  # 至少需要 3 个采样任务
-        except:
+            if count:
+                print(f"   Found {count} STALE cron entries - remove them (crontab -e)")
+            return count == 0
+        except Exception:
             return False
 
     def _check_mcp_connection(self) -> bool:
