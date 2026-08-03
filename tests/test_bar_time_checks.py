@@ -53,9 +53,34 @@ class SymbolBarVerificationTests(unittest.TestCase):
         report = verify_symbol_bars("SPY", series, received_at=MID_SESSION)
         self.assertIn("NON_UNIFORM_BAR_INTERVAL", report.irregularities)
 
-    def test_future_bar_is_flagged(self):
+    def test_future_bar_carrying_volume_is_flagged(self):
+        # A bar stamped ahead of our own receipt that nevertheless reports trades
+        # is a venue fault. This rule must keep its teeth after the grid trim.
         series = bars(self.start, 6)
-        series.append({"begins_at": (MID_SESSION + timedelta(seconds=300)).isoformat()})
+        series.append({"begins_at": (MID_SESSION + timedelta(seconds=300)).isoformat(),
+                       "volume": 4321})
+        report = verify_symbol_bars("SPY", series, received_at=MID_SESSION)
+        self.assertIn("BAR_FROM_FUTURE", report.irregularities)
+
+    def test_empty_future_rows_are_venue_grid_padding_not_an_irregularity(self):
+        """LIVE 2026-08-03: get_equity_historicals returns the whole regular
+        session as a grid, so every mid-session probe carries zero-volume rows
+        out to the close. Reported as irregularities they made 38 of 40
+        snapshots 'unsound' about bars the decision path had already discarded."""
+        series = bars(self.start, 6)
+        series += [
+            {"begins_at": (MID_SESSION + timedelta(seconds=300 * i)).isoformat(),
+             "volume": 0}
+            for i in range(1, 40)
+        ]
+        report = verify_symbol_bars("SPY", series, received_at=MID_SESSION)
+        self.assertEqual(report.irregularities, ())
+        self.assertEqual(report.bar_count, 6)
+
+    def test_unparsable_volume_is_never_treated_as_padding(self):
+        series = bars(self.start, 6)
+        series.append({"begins_at": (MID_SESSION + timedelta(seconds=300)).isoformat(),
+                       "volume": "not-a-number"})
         report = verify_symbol_bars("SPY", series, received_at=MID_SESSION)
         self.assertIn("BAR_FROM_FUTURE", report.irregularities)
 

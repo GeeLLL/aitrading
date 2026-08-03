@@ -108,6 +108,15 @@ def _bars_by_symbol(envelope: Mapping[str, Any]) -> dict[str, list[dict]]:
     return grouped
 
 
+def _bar_volume(bar: dict) -> int:
+    """Volume as an int; anything unreadable counts as non-empty so a malformed
+    row is never mistaken for venue grid padding and silently dropped."""
+    try:
+        return int(bar.get("volume") or 0)
+    except (TypeError, ValueError):
+        return 1
+
+
 def verify_symbol_bars(
     symbol: str,
     bars: list[dict],
@@ -123,6 +132,33 @@ def verify_symbol_bars(
     duplicates, interval uniformity and future-bar rejection always apply.
     """
     irregularities: list[str] = []
+    if not bars:
+        return SymbolBarReport(symbol, 0, None, None, ("NO_BARS",))
+
+    # The venue returns the WHOLE regular session as a grid, so a probe taken at
+    # 16:23Z carries zero-volume placeholder rows stamped out to the 20:00Z
+    # close, plus the still-forming current bar. Neither is data. Dropping them
+    # here keeps this audit consistent with the live decision path
+    # (research.universe_evaluation) — on 2026-08-03 it disagreed, calling 38 of
+    # 40 snapshots unsound about bars the decision path had already discarded.
+    #
+    # The trim is deliberately narrow so BAR_FROM_FUTURE keeps its teeth: only
+    # rows that are BOTH in the future AND empty are treated as grid padding. A
+    # bar carrying real volume but stamped ahead of the receipt is a venue fault
+    # and must still be reported.
+    interval = timedelta(seconds=interval_seconds)
+    placeholders = 0
+    kept: list[dict] = []
+    for bar in bars:
+        stamp = _parse_iso_aware(str(bar.get("begins_at") or ""))
+        if stamp is not None and stamp >= received_at and not _bar_volume(bar):
+            placeholders += 1
+            continue
+        if stamp is not None and stamp + interval > received_at and not _bar_volume(bar):
+            placeholders += 1     # the current bar, not yet closed
+            continue
+        kept.append(bar)
+    bars = kept
     if not bars:
         return SymbolBarReport(symbol, 0, None, None, ("NO_BARS",))
 
@@ -142,7 +178,6 @@ def verify_symbol_bars(
     if len(set(stamps)) != len(stamps):
         irregularities.append("DUPLICATE_BARS")
 
-    interval = timedelta(seconds=interval_seconds)
     for earlier, later in zip(ordered, ordered[1:]):
         gap = later - earlier
         if gap != interval:
