@@ -552,6 +552,14 @@ def collect_fresh_option_quote_probe(
 
 BARS_PROBE_REQUIRED_TOOLS = frozenset({"get_equity_historicals"})
 BARS_PROBE_MAX_SYMBOLS = 20
+# MEASURED 2026-07-31/08-03, not chosen: one call carrying 3 symbols' worth of a
+# full regular session came back intact; 5 and 7 overflowed the harness
+# tool-output cap ("not valid JSON (possible truncation)") and 13 made the tool
+# itself error. The binding constraint is payload size, and the session VWAP
+# needs the whole session, so the window cannot be narrowed instead. Chunk.
+BARS_PROBE_CHUNK_SYMBOLS = 3
+# The pilot slot's own timeout is 720s and the probe set is only its first step.
+BARS_PROBE_TOTAL_BUDGET_SECONDS = 480
 
 
 def bars_probe_arguments(
@@ -661,6 +669,39 @@ def collect_universe_bars_probe(
         if response_texts else received_at,
         received_at=received_at,
     )
+
+
+def collect_universe_bars_probes(
+    symbols: list[str],
+    *,
+    chunk_size: int = BARS_PROBE_CHUNK_SYMBOLS,
+    total_budget_seconds: int = BARS_PROBE_TOTAL_BUDGET_SECONDS,
+    **kwargs: Any,
+) -> list[RawSnapshotReceipt]:
+    """Vault the whole universe's bars as several payload-sized probes.
+
+    One call per chunk, each vaulted on its own — no envelope is synthesised, so
+    every stored snapshot is still exactly what one tool call returned. Fails
+    closed on the FIRST chunk that fails: a partial universe would silently
+    change which symbols the frozen strategy could even consider.
+    """
+
+    if not symbols:
+        raise OfficialCollectorError("Bars probe requires at least one symbol.")
+    if chunk_size < 1:
+        raise OfficialCollectorError("Bars probe chunk size must be positive.")
+    ordered: list[str] = []
+    for symbol in symbols:
+        candidate = str(symbol).strip().upper()
+        if candidate not in ordered:
+            ordered.append(candidate)
+    chunks = [ordered[i:i + chunk_size] for i in range(0, len(ordered), chunk_size)]
+    # Every chunk is a separate CLI spawn, so the per-call default (180s) would
+    # let five chunks outlive the 720s pilot slot and be killed mid-probe. Divide
+    # one budget instead, so the probe set fails closed inside the slot rather
+    # than being reaped by the worker with no receipt written.
+    kwargs.setdefault("timeout_seconds", max(60, total_budget_seconds // len(chunks)))
+    return [collect_universe_bars_probe(chunk, **kwargs) for chunk in chunks]
 
 
 def collect_official_shadow_snapshot(

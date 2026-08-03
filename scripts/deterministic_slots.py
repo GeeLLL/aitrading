@@ -39,7 +39,7 @@ from execution.official_mcp_collector import (
     OfficialCollectorError,
     collect_fresh_option_quote_probe,
     collect_official_raw_snapshot,
-    collect_universe_bars_probe,
+    collect_universe_bars_probes,
 )
 from monitoring.scheduler_watchdog import unresolved_incident_ids
 from research.trajectory_recorder import (
@@ -81,14 +81,20 @@ def _direct_token_provider():
     return OAuthTokenProvider(metadata, TokenCache(ROOT / DEFAULT_CACHE_PATH))
 
 
-def _collect_bars(symbols: list[str], project_root: Path):
+def _collect_bars(symbols: list[str], project_root: Path) -> list:
+    """Vault the universe's bars, returning one receipt per probe call.
+
+    The direct transport has no payload cap, so it stays a single call. The
+    Claude-CLI transport must chunk: all thirteen symbols in one call made the
+    tool error outright, which FAILED_CLOSED every pilot slot on 2026-08-03.
+    """
     if _use_direct_transport():
         from execution.robinhood_direct_collector import collect_universe_bars_probe_direct
 
-        return collect_universe_bars_probe_direct(
+        return [collect_universe_bars_probe_direct(
             symbols, token_provider=_direct_token_provider(), project_root=project_root,
-        )
-    return collect_universe_bars_probe(symbols, project_root=project_root)
+        )]
+    return collect_universe_bars_probes(symbols, project_root=project_root)
 
 
 def _collect_quote_probe(instrument_ids: list[str], project_root: Path):
@@ -168,16 +174,20 @@ def run_pilot_sample(
     # 1. Bars probe over the frozen universe.
     try:
         symbols = list(load_universe_policy(str(project_root / "config/universe.toml"))["symbols"])
-        bars_receipt = _collect_bars(symbols, project_root)
-        steps.append({"step": "BARS_PROBE", "ok": True, "snapshot": str(bars_receipt.path),
-                      "sha256": bars_receipt.content_sha256, "symbols": symbols})
+        bars_receipts = _collect_bars(symbols, project_root)
+        steps.append({"step": "BARS_PROBE", "ok": True,
+                      "snapshot": str(bars_receipts[0].path),
+                      "snapshots": [str(r.path) for r in bars_receipts],
+                      "sha256": bars_receipts[0].content_sha256,
+                      "sha256_all": [r.content_sha256 for r in bars_receipts],
+                      "symbols": symbols})
     except (OfficialCollectorError, OSError, ValueError, KeyError) as error:
         steps.append({"step": "BARS_PROBE", "ok": False, "error": f"{type(error).__name__}: {error}"})
         return finish("FAILED_CLOSED")
 
     # 2. Frozen evaluation -> decision record.
     try:
-        decision = evaluate_snapshot(bars_receipt.path, project_root=project_root)
+        decision = evaluate_snapshot([r.path for r in bars_receipts], project_root=project_root)
         registry = load_policy_labels(project_root)
         decision["run_id"] = run_id
         decision["policy_label_registry_version"] = registry.version

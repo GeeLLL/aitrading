@@ -149,3 +149,67 @@ class BarsProbeCollectorWiringTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BarsProbeChunkingTests(unittest.TestCase):
+    """2026-08-03: every pilot slot FAILED_CLOSED because all thirteen universe
+    symbols went into one get_equity_historicals call and the tool errored. The
+    universe must be split across payload-sized calls, and the split must never
+    silently return a partial universe."""
+
+    def _fake(self, calls, fail_on=None):
+        def probe(symbols, **kwargs):
+            calls.append((list(symbols), kwargs))
+            if fail_on is not None and len(calls) == fail_on:
+                raise OfficialCollectorError("TOOL_ERROR")
+            return object()
+        return probe
+
+    def test_universe_is_split_into_payload_sized_calls(self):
+        from unittest.mock import patch
+        from execution.official_mcp_collector import (
+            BARS_PROBE_CHUNK_SYMBOLS, collect_universe_bars_probes,
+        )
+        symbols = [f"SY{i}" for i in range(13)]
+        calls = []
+        with patch("execution.official_mcp_collector.collect_universe_bars_probe",
+                   side_effect=self._fake(calls)):
+            receipts = collect_universe_bars_probes(symbols)
+        self.assertEqual(len(receipts), len(calls))
+        self.assertTrue(all(len(c[0]) <= BARS_PROBE_CHUNK_SYMBOLS for c in calls))
+        # Every symbol appears exactly once across the chunks.
+        flat = [s for c in calls for s in c[0]]
+        self.assertEqual(sorted(flat), sorted(symbols))
+
+    def test_one_failed_chunk_fails_the_whole_probe_set(self):
+        # A partial universe would quietly change which symbols the frozen
+        # strategy could consider, which is worse than collecting nothing.
+        from unittest.mock import patch
+        from execution.official_mcp_collector import collect_universe_bars_probes
+        calls = []
+        with patch("execution.official_mcp_collector.collect_universe_bars_probe",
+                   side_effect=self._fake(calls, fail_on=2)):
+            with self.assertRaises(OfficialCollectorError):
+                collect_universe_bars_probes([f"SY{i}" for i in range(13)])
+
+    def test_chunk_timeouts_fit_inside_the_pilot_slot(self):
+        from unittest.mock import patch
+        from execution.official_mcp_collector import (
+            BARS_PROBE_TOTAL_BUDGET_SECONDS, collect_universe_bars_probes,
+        )
+        calls = []
+        with patch("execution.official_mcp_collector.collect_universe_bars_probe",
+                   side_effect=self._fake(calls)):
+            collect_universe_bars_probes([f"SY{i}" for i in range(13)])
+        total = sum(c[1]["timeout_seconds"] for c in calls)
+        self.assertLessEqual(total, BARS_PROBE_TOTAL_BUDGET_SECONDS + 60 * len(calls))
+        self.assertLess(total, 720)   # the worker's PILOT_TIMEOUT_SECONDS
+
+    def test_duplicate_symbols_do_not_buy_extra_calls(self):
+        from unittest.mock import patch
+        from execution.official_mcp_collector import collect_universe_bars_probes
+        calls = []
+        with patch("execution.official_mcp_collector.collect_universe_bars_probe",
+                   side_effect=self._fake(calls)):
+            collect_universe_bars_probes(["SPY", "spy", "QQQ"])
+        self.assertEqual([s for c in calls for s in c[0]], ["SPY", "QQQ"])

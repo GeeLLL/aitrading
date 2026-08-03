@@ -20,8 +20,10 @@ from __future__ import annotations
 
 import json
 import tomllib
+from datetime import timedelta
 from decimal import Decimal
 from pathlib import Path
+from collections.abc import Sequence
 from typing import Any
 
 from execution.official_mcp_collector import _parse_iso_aware
@@ -50,19 +52,49 @@ def _jsonable(value: Any) -> Any:
     return value
 
 
+def _merge_bars(grouped: dict[str, list], addition: dict[str, list]) -> None:
+    """Fold one snapshot's bars into the accumulator, de-duplicated by bar time."""
+    for symbol, bars in addition.items():
+        existing = grouped.setdefault(symbol, [])
+        seen = {b.begins_at for b in existing}
+        existing.extend(b for b in bars if b.begins_at not in seen)
+        existing.sort(key=lambda b: b.begins_at)
+
+
 def evaluate_snapshot(
-    snapshot_path: str | Path,
+    snapshot_path: str | Path | Sequence[str | Path],
     *,
     project_root: Path,
     universe: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Deterministically evaluate the frozen strategy over one vault snapshot."""
-    path = Path(snapshot_path)
-    envelope = json.loads(path.read_text(encoding="utf-8"))
-    received_at = _parse_iso_aware(str(envelope.get("received_at") or ""))
-    if received_at is None:
+    """Deterministically evaluate the frozen strategy over one or more snapshots.
+
+    The universe does not fit in a single bars probe (see
+    ``BARS_PROBE_CHUNK_SYMBOLS``), so a slot vaults several. They are evaluated
+    together, and freshness is judged against the OLDEST receipt time in the
+    set — the most conservative choice, so chunking can never make bar-time
+    integrity look better than the slowest chunk actually was.
+    """
+    if isinstance(snapshot_path, (str, Path)):
+        paths = [Path(snapshot_path)]
+    else:
+        paths = [Path(item) for item in snapshot_path]
+    if not paths:
         return {"schema_version": 1, "status": "FAIL",
-                "reason": "NO_TRUSTED_RECEIPT_TIME", "symbols": {}}
+                "reason": "NO_SNAPSHOTS", "symbols": {}}
+    path = paths[0]
+    envelopes = []
+    receipts = []
+    for candidate in paths:
+        envelope = json.loads(candidate.read_text(encoding="utf-8"))
+        stamp = _parse_iso_aware(str(envelope.get("received_at") or ""))
+        if stamp is None:
+            return {"schema_version": 1, "status": "FAIL",
+                    "reason": "NO_TRUSTED_RECEIPT_TIME", "symbols": {}}
+        envelopes.append(envelope)
+        receipts.append(stamp)
+    envelope = envelopes[0]
+    received_at = min(receipts)
 
     signal_policy = load_signal_policy(project_root)
     with (project_root / "strategy/strategy_v1.0.toml").open("rb") as handle:
@@ -72,7 +104,27 @@ def evaluate_snapshot(
     regime_policy = full_policy.get("market_regime", {})
     confirmation_bars = int(regime_policy.get("confirmation_completed_bars", 2))
 
-    grouped = parse_bars(envelope)
+    grouped: dict[str, list] = {}
+    for item in envelopes:
+        _merge_bars(grouped, parse_bars(item))
+    # The venue pre-populates the WHOLE regular session as a grid, so a probe run
+    # at 16:23Z comes back carrying zero-volume placeholder bars stamped out to
+    # the 20:00Z close. Those are not data — they are rows for minutes that have
+    # not happened. Left in, they made the frozen validator report
+    # SPY_BAR_FROM_FUTURE and rendered every slot inadmissible on 2026-08-03.
+    # Drop bars that have not begun as of the receipt; keep everything else, so
+    # a genuinely stale or out-of-order bar still trips the integrity check.
+    #
+    # The boundary is the bar's END, not its start: a bar that began at 16:20 is
+    # still forming at a 16:23 receipt, and the frozen strategy is defined on
+    # COMPLETED bars throughout (it is also why the volume average excludes the
+    # newest bar — an unconsolidated bar can even report decreasing volume
+    # between reads). Anything whose close has not happened yet is dropped.
+    horizon = received_at - timedelta(minutes=interval)
+    grouped = {
+        symbol: [bar for bar in bars if bar.begins_at <= horizon]
+        for symbol, bars in grouped.items()
+    }
     if universe is not None:
         wanted = {symbol.upper() for symbol in universe}
         grouped = {s: b for s, b in grouped.items() if s in wanted}
@@ -84,7 +136,15 @@ def evaluate_snapshot(
             grouped.get(symbol, []), received_at=received_at,
             interval_minutes=interval, count=confirmation_bars,
         ))
-    bar_violations = validate_bar_set(
+    # validate_bar_set finds nothing wrong with an EMPTY set, so an empty one
+    # would sail through as "sound" and make the slot admissible on no data at
+    # all. Absence of the reference bars is itself a violation.
+    missing_reference = [
+        symbol for symbol in REFERENCE_SYMBOLS
+        if len([b for b in reference_bars if b.symbol == symbol]) < confirmation_bars
+    ]
+    bar_violations = [f"{symbol}_REFERENCE_BARS_MISSING" for symbol in missing_reference]
+    bar_violations += validate_bar_set(
         reference_bars,
         decision_time=received_at,
         expected_interval_minutes=interval,
@@ -145,7 +205,10 @@ def evaluate_snapshot(
         "provenance": "HARVESTED_VAULT_SNAPSHOT_FROZEN_STRATEGY_CODE",
         "snapshot_path": str(path),
         "snapshot_id": envelope.get("snapshot_id"),
+        "snapshot_paths": [str(item) for item in paths],
+        "snapshot_ids": [item.get("snapshot_id") for item in envelopes],
         "received_at": received_at.isoformat(),
+        "receipt_times": sorted(stamp.isoformat() for stamp in receipts),
         "minimum_volume_ratio": float(minimum_volume_ratio),
         "bar_time_violations": list(bar_violations),
         "bar_time_sound": not bar_violations,

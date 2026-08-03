@@ -75,9 +75,11 @@ class PilotSampleTests(unittest.TestCase):
             if bars_fails:
                 from execution.official_mcp_collector import OfficialCollectorError
                 raise OfficialCollectorError("MCP_DOWN")
-            return _bars_receipt(root)
+            # Production chunks the universe across several probes; the pilot
+            # runner therefore receives a LIST of receipts, not one.
+            return [_bars_receipt(root), _bars_receipt(root)]
 
-        with patch("scripts.deterministic_slots.collect_universe_bars_probe", side_effect=fake_bars), \
+        with patch("scripts.deterministic_slots.collect_universe_bars_probes", side_effect=fake_bars), \
              patch("scripts.deterministic_slots.evaluate_snapshot", return_value=dict(decision)), \
              patch("scripts.deterministic_slots.collect_official_raw_snapshot",
                    return_value=_option_receipt(root)), \

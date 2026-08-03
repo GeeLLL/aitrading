@@ -185,6 +185,102 @@ class SnapshotEvaluationTests(unittest.TestCase):
             )
             self.assertIn("No model produced any number here", report["note"])
 
+    def test_venue_placeholder_grid_does_not_poison_bar_time(self):
+        """LIVE 2026-08-03: get_equity_historicals returns the WHOLE regular
+        session as a grid, so a 16:23Z probe came back carrying zero-volume rows
+        stamped out to the 20:00Z close. The frozen validator read those as
+        SPY_BAR_FROM_FUTURE and made every slot inadmissible. Rows for minutes
+        that have not happened are not data and must be dropped."""
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            start = datetime(2026, 8, 3, 13, 30, tzinfo=timezone.utc)
+            received = start + timedelta(minutes=5 * 25)      # 25 real bars in
+            bars = {}
+            for symbol in ("SPY", "QQQ"):
+                real = series(symbol, start, 25)
+                placeholders = [
+                    bar(symbol, start + timedelta(minutes=5 * i), close="100",
+                        high="100", low="100", volume=0)
+                    for i in range(25, 78)                    # out to the close
+                ]
+                bars[symbol] = real + placeholders
+            path = self._store(root, bars, received)
+
+            report = evaluate_snapshot(path, project_root=ROOT)
+
+            self.assertEqual(report["bar_time_violations"], [])
+            self.assertTrue(report["decision_admissible"])
+
+    def test_the_still_forming_bar_is_excluded(self):
+        """The boundary is the bar's END: at a 16:23 receipt the 16:20 bar is
+        still consolidating, so it must not reach the frozen evaluators."""
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            start = datetime(2026, 8, 3, 13, 30, tzinfo=timezone.utc)
+            bars = {s: series(s, start, 25) for s in ("SPY", "QQQ")}
+            # Receipt lands three minutes into the 25th bar's five-minute window.
+            received = start + timedelta(minutes=5 * 24, seconds=180)
+            path = self._store(root, bars, received)
+
+            report = evaluate_snapshot(path, project_root=ROOT)
+
+            self.assertEqual(report["bar_time_violations"], [])
+            newest = max(b["features"]["newest_bar_begins_at"]
+                         for b in report["symbols"].values()
+                         if b["features"].get("newest_bar_begins_at"))
+            self.assertLessEqual(
+                datetime.fromisoformat(newest) + timedelta(minutes=5), received,
+            )
+
+    def test_chunked_snapshots_evaluate_as_one_universe(self):
+        """The universe arrives as several probes (BARS_PROBE_CHUNK_SYMBOLS), so
+        the evaluator must see the union, not just the first chunk."""
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            start = datetime(2026, 7, 30, 13, 30, tzinfo=timezone.utc)
+            received = start + timedelta(minutes=5 * 25, seconds=60)
+            first = self._store(root, {s: series(s, start, 25) for s in ("SPY", "QQQ")},
+                                received)
+            second = self._store(root, {"NVDA": series("NVDA", start, 25)}, received)
+
+            report = evaluate_snapshot([first, second], project_root=ROOT)
+
+            self.assertEqual(report["status"], "OK")
+            self.assertEqual(sorted(report["symbols"]), ["NVDA", "QQQ", "SPY"])
+            self.assertEqual(len(report["snapshot_paths"]), 2)
+
+    def test_freshness_is_judged_by_the_slowest_chunk(self):
+        """Chunking must never make bar-time integrity look better than it was:
+        a stale chunk has to poison the whole set, not be averaged away."""
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            start = datetime(2026, 7, 30, 13, 30, tzinfo=timezone.utc)
+            fresh_at = start + timedelta(minutes=5 * 25, seconds=60)
+            fresh = self._store(root, {s: series(s, start, 25) for s in ("SPY", "QQQ")},
+                                fresh_at)
+            self.assertTrue(evaluate_snapshot(fresh, project_root=ROOT)["bar_time_sound"])
+
+            stale = self._store(root, {"NVDA": series("NVDA", start, 25)},
+                                fresh_at - timedelta(hours=3))
+            report = evaluate_snapshot([fresh, stale], project_root=ROOT)
+
+            self.assertEqual(report["received_at"],
+                             min(report["receipt_times"]))
+            self.assertFalse(report["decision_admissible"])
+            self.assertEqual(report["qualified_symbols"], [])
+
+    def test_one_unreadable_chunk_fails_the_whole_set_closed(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            start = datetime(2026, 7, 30, 13, 30, tzinfo=timezone.utc)
+            good = self._store(root, {"SPY": series("SPY", start, 25)},
+                               start + timedelta(minutes=126))
+            bad = root / "bad.json"
+            bad.write_text(json.dumps({"received_at": "nonsense"}), encoding="utf-8")
+            report = evaluate_snapshot([good, bad], project_root=ROOT)
+            self.assertEqual(report["status"], "FAIL")
+            self.assertEqual(report["reason"], "NO_TRUSTED_RECEIPT_TIME")
+
     def test_unreadable_receipt_time_fails_closed(self):
         with TemporaryDirectory() as tmp:
             path = Path(tmp) / "x.json"
