@@ -33,8 +33,16 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from monitoring.daily_schedule import SESSION_TIMEZONE, expected_runs_for_date
+from strategy.policy_labels import load_policy_labels
 
-POLICY_LABELS = {"BASE_25", "BASE_30", "AI_RANK_V1"}
+# Loaded from the frozen registry (config/policy_labels.toml) so this report can
+# never again drift from the labels the pilot actually records. The registry's
+# retired policy labels stay in the classification set, so historical
+# trajectories (BASE_25/BASE_30 era) keep counting as policy-of-their-era.
+# Before this, POLICY_LABELS was hardcoded to the retired set while the pilot
+# emitted BASE_18/BASE_21 — making the daily policy PnL structurally zero.
+_LABEL_REGISTRY = load_policy_labels(ROOT)
+POLICY_LABELS = set(_LABEL_REGISTRY.policy_for_classification)
 SUCCESS_STATUSES = {"COMPLETED"}
 
 # The frozen policy's fill window (strategy_v1.0 maximum_fill_wait_seconds),
@@ -118,6 +126,72 @@ def load_trajectories(trajectory_dir: Path, warnings: list[str]) -> dict[str, li
             continue
         groups.setdefault(trajectory_id, []).append(payload)
     return groups
+
+
+def fill_window_dual_clock_audit(groups: dict[str, list[dict]]) -> dict:
+    """Per-window elapsed time on BOTH clocks: local receipt vs venue update.
+
+    Adjudication stays on the local receipt clock (authoritative, cannot be
+    spoofed by upstream timestamps), but collection latency eats into the 60s
+    window on that clock, systematically biasing toward NO_FILL. This audit
+    quantifies that bias: a window where the venue clock would have filled but
+    the receipt clock did not is flagged, so the bias is measured, not hidden.
+    (Ported from the ad-hoc 07-29 close analysis into the canonical report.)
+    """
+    windows: list[dict] = []
+    for trajectory_id, events in sorted(groups.items()):
+        candidate = next(
+            (event for event in events
+             if event.get("event_type") == "CANDIDATE" and not event.get("rejection_reasons")),
+            None,
+        )
+        if candidate is None:
+            continue
+        limit = _decimal(candidate.get("limit_price")
+                         if candidate.get("limit_price") is not None else candidate.get("ask"))
+        recorded = _parse_ts(candidate.get("limit_recorded_at")) or _parse_ts(candidate.get("quote_received_at"))
+        deadline = _parse_ts(candidate.get("fill_window_deadline"))
+        candidate_source = _parse_ts(candidate.get("source_updated_at"))
+        if limit is None or recorded is None or deadline is None:
+            continue
+        window_seconds = (deadline - recorded).total_seconds()
+        for quote in (event for event in events if event.get("event_type") == "QUOTE"):
+            quote_received = _parse_ts(quote.get("quote_received_at"))
+            quote_source = _parse_ts(quote.get("source_updated_at"))
+            ask = _decimal(quote.get("ask"))
+            if quote_received is None or ask is None:
+                continue
+            receipt_elapsed = (quote_received - recorded).total_seconds()
+            venue_elapsed = (
+                (quote_source - candidate_source).total_seconds()
+                if quote_source is not None and candidate_source is not None else None
+            )
+            in_receipt = receipt_elapsed <= window_seconds + FILL_WINDOW_SKEW_SECONDS
+            in_venue = (
+                venue_elapsed is not None
+                and venue_elapsed <= window_seconds + FILL_WINDOW_SKEW_SECONDS
+            )
+            would_fill = ask <= limit
+            windows.append({
+                "trajectory_id": trajectory_id,
+                "receipt_elapsed_seconds": receipt_elapsed,
+                "venue_elapsed_seconds": venue_elapsed,
+                "ask_at_or_below_limit": bool(would_fill),
+                "in_window_receipt_clock": bool(in_receipt),
+                "in_window_venue_clock": bool(in_venue),
+                "clock_divergence_changes_outcome": bool(would_fill and in_venue and not in_receipt),
+            })
+    return {
+        "windows": windows,
+        "clock_divergence_count": sum(
+            1 for window in windows if window["clock_divergence_changes_outcome"]
+        ),
+        "note": (
+            "Adjudication uses the local receipt clock (authoritative). The venue-clock "
+            "view quantifies collection-latency bias toward NO_FILL; it never changes "
+            "the adjudicated outcome."
+        ),
+    }
 
 
 def reconstruct_trade(events: list[dict], friction: Decimal) -> dict:
@@ -460,6 +534,23 @@ def build_report(report_date: date, *, project_root: Path = ROOT) -> dict:
     policy_trades = [trade for trade in trades if is_policy(trade)]
     research_trades = [trade for trade in trades if not is_policy(trade)]
 
+    # Per-label counts and fill-adjudication histogram: makes label drift and a
+    # structurally-empty policy bucket immediately visible in the daily report.
+    label_counts: dict[str, int] = {}
+    adjudication_counts: dict[str, int] = {}
+    for trade in trades:
+        for label in trade.get("policy_labels") or []:
+            label_counts[str(label)] = label_counts.get(str(label), 0) + 1
+        outcome = str(trade.get("outcome") or "UNKNOWN")
+        adjudication_counts[outcome] = adjudication_counts.get(outcome, 0) + 1
+    unknown_labels = sorted(
+        label for label in label_counts
+        if label not in POLICY_LABELS
+        and label not in _LABEL_REGISTRY.research
+    )
+    if unknown_labels:
+        warnings.append(f"UNREGISTERED_POLICY_LABELS:{','.join(unknown_labels)}")
+
     def bucket_totals(bucket: list[dict]) -> dict:
         realized = [trade for trade in bucket if trade["net_pnl_usd"] is not None]
         return {
@@ -485,6 +576,10 @@ def build_report(report_date: date, *, project_root: Path = ROOT) -> dict:
             "policy": policy_trades,
             "research_counterfactual": research_trades,
         },
+        "policy_label_registry_version": _LABEL_REGISTRY.version,
+        "policy_label_counts": label_counts,
+        "fill_adjudications": adjudication_counts,
+        "fill_window_audit": fill_window_dual_clock_audit(groups),
         "pnl": {
             "friction_model": "CONSERVATIVE_UNCALIBRATED",
             "round_trip_friction_usd": float(friction),

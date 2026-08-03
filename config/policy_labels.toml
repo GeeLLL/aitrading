@@ -1,0 +1,46 @@
+# Frozen policy-label registry (single source of truth).
+#
+# Before this file existed, label definitions lived only in the pilot prompt,
+# ad-hoc daily scripts, and research docs — and they drifted: eod_report.py
+# still classified trajectories against the retired BASE_25/BASE_30 set while
+# the pilot recorded BASE_18/BASE_21, so the daily policy PnL was structurally
+# always zero. One ad-hoc script even described BASE_25/BASE_30 as profit-target
+# variants, contradicting the protocol doc. This registry freezes the names,
+# the classifier sets, and the documented thresholds in one auditable place.
+#
+# Governance: labels are FROZEN. Changing a threshold or adding a label
+# requires a new version stamp here and cannot rewrite prior outcomes; retired
+# labels stay listed so historical trajectories keep classifying correctly.
+# Authority for semantics: research/ACCELERATED_PROFITABILITY_AND_AI_EDGE_V1_CN.md
+# (volume-ratio baselines) plus the 2026-07-30 recalibration to 1.8/2.1.
+
+schema_version = 1
+version = "labels_v2_2026-07-30"
+changes_require_new_version = true
+
+# Labels whose trajectories count as the day's POLICY choice.
+[policy.BASE_18]
+min_volume_ratio = 1.8
+definition = "Deterministic baseline: signal path per strategy_v1.0 with volume_ratio >= 1.8."
+
+[policy.BASE_21]
+min_volume_ratio = 2.1
+definition = "Deterministic baseline: signal path per strategy_v1.0 with volume_ratio >= 2.1."
+
+# Labels recorded for research only; never the policy trade.
+[research.NEAR_MISS]
+definition = "Candidate that failed exactly one eligibility condition; counterfactual trajectory only."
+
+# Retired policy labels: no longer emitted, but historical trajectories carrying
+# them still classify as policy-of-their-era (never silently reclassified).
+[retired_policy.BASE_25]
+min_volume_ratio = 2.5
+retired_in = "labels_v2_2026-07-30"
+
+[retired_policy.BASE_30]
+min_volume_ratio = 3.0
+retired_in = "labels_v2_2026-07-30"
+
+[retired_policy.AI_RANK_V1]
+definition = "AI cross-sectional ranking lane; paused pending the deterministic-orchestrator migration."
+retired_in = "labels_v2_2026-07-30"

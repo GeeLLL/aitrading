@@ -22,9 +22,23 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from execution.mcp_client import EnvTokenProvider, McpError
+from execution.mcp_client import EnvTokenProvider, McpError, TokenProvider
+from execution.mcp_oauth import DEFAULT_CACHE_PATH, OAuthTokenProvider, TokenCache, discover
 from execution.official_mcp_collector import OfficialCollectorError
-from execution.robinhood_direct_collector import collect_official_raw_snapshot_direct
+from execution.robinhood_direct_collector import (
+    ROBINHOOD_MCP_ENDPOINT,
+    collect_official_raw_snapshot_direct,
+)
+
+
+def _token_provider() -> TokenProvider:
+    """Prefer the OAuth cache (self-refreshing, from scripts/mcp_oauth_login.py);
+    fall back to the ROBINHOOD_MCP_TOKEN env var for manual A/B testing."""
+    cache_path = ROOT / DEFAULT_CACHE_PATH
+    if cache_path.is_file():
+        metadata = discover(ROBINHOOD_MCP_ENDPOINT)
+        return OAuthTokenProvider(metadata, TokenCache(cache_path))
+    return EnvTokenProvider("ROBINHOOD_MCP_TOKEN")
 
 
 def main() -> int:
@@ -35,7 +49,7 @@ def main() -> int:
     try:
         receipt = collect_official_raw_snapshot_direct(
             symbol,
-            token_provider=EnvTokenProvider("ROBINHOOD_MCP_TOKEN"),
+            token_provider=_token_provider(),
             project_root=ROOT,
         )
     except (OfficialCollectorError, McpError) as error:

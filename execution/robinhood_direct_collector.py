@@ -285,3 +285,118 @@ def collect_official_raw_snapshot_direct(
         source_updated_at=_freshest_source_timestamp(response_texts, not_after=received_at),
         received_at=received_at,
     )
+
+
+# --------------------------------------------------------------------------- #
+# Direct (LLM-free) equivalents of the single-tool probes. Envelopes mirror the
+# CLI versions field-for-field except transport, so every downstream consumer
+# (universe evaluation, trajectory refresh, freshness checks) works unchanged.
+# --------------------------------------------------------------------------- #
+
+def collect_universe_bars_probe_direct(
+    symbols: list[str],
+    *,
+    token_provider: TokenProvider,
+    endpoint: str = ROBINHOOD_MCP_ENDPOINT,
+    transport: Transport | None = None,
+    session_date: date | None = None,
+    lookback_days: int = 0,
+    project_root: str | Path = ".",
+    vault_root: str | Path = "logs/raw",
+) -> RawSnapshotReceipt:
+    """One direct get_equity_historicals call for the universe (no LLM)."""
+    from execution.official_mcp_collector import (
+        BARS_PROBE_MAX_SYMBOLS,
+        bars_probe_arguments,
+    )
+    from monitoring.daily_schedule import SESSION_TIMEZONE as _SESSION_TZ
+
+    if not symbols or len(symbols) > BARS_PROBE_MAX_SYMBOLS:
+        raise OfficialCollectorError(
+            f"Bars probe requires 1-{BARS_PROBE_MAX_SYMBOLS} symbols."
+        )
+    normalized: list[str] = []
+    for symbol in symbols:
+        candidate = str(symbol).strip().upper()
+        if not SYMBOL_PATTERN.fullmatch(candidate):
+            raise OfficialCollectorError(f"Invalid symbol for bars probe: {symbol!r}")
+        if candidate not in normalized:
+            normalized.append(candidate)
+    root = Path(project_root).resolve()
+    target_date = session_date or datetime.now(_SESSION_TZ).date()
+    arguments = bars_probe_arguments(normalized, target_date, lookback_days=lookback_days)
+
+    import json as _json
+    from execution.mcp_client import tool_result_json as _tool_result_json
+
+    client = McpClient(endpoint, transport or UrllibTransport(), token_provider)
+    client.initialize()
+    output = _tool_result_json(client.call_tool("get_equity_historicals", arguments))
+    received_at = datetime.now(timezone.utc)
+    response_text = _json.dumps(output)
+    return RawDataVault(root / vault_root).store(
+        source="ROBINHOOD_OFFICIAL_MCP",
+        request={
+            "schema_version": 1,
+            "transport": "PYTHON_DIRECT_MCP",
+            "probe": "UNIVERSE_BARS",
+            "symbols": normalized,
+            "session_date": target_date.isoformat(),
+            "requested_arguments": arguments,
+            "tool_calls": [{"tool": "get_equity_historicals", "input": arguments}],
+            "partial": False,
+        },
+        response={"tool_results": [{"tool": "get_equity_historicals", "output": output}]},
+        source_updated_at=_freshest_source_timestamp([response_text], not_after=received_at),
+        received_at=received_at,
+    )
+
+
+def collect_fresh_option_quote_probe_direct(
+    instrument_ids: list[str],
+    *,
+    token_provider: TokenProvider,
+    endpoint: str = ROBINHOOD_MCP_ENDPOINT,
+    transport: Transport | None = None,
+    project_root: str | Path = ".",
+    vault_root: str | Path = "logs/raw",
+) -> RawSnapshotReceipt:
+    """One direct get_option_quotes call proving a fresh quote (no LLM)."""
+    from execution.official_mcp_collector import (
+        INSTRUMENT_ID_PATTERN,
+        PROBE_MAX_INSTRUMENTS,
+    )
+
+    if not instrument_ids or len(instrument_ids) > PROBE_MAX_INSTRUMENTS:
+        raise OfficialCollectorError(
+            f"Probe requires 1-{PROBE_MAX_INSTRUMENTS} option instrument ids."
+        )
+    normalized_ids = [str(identifier).strip().lower() for identifier in instrument_ids]
+    for identifier in normalized_ids:
+        if not INSTRUMENT_ID_PATTERN.fullmatch(identifier):
+            raise OfficialCollectorError("Invalid option instrument id for probe.")
+    root = Path(project_root).resolve()
+
+    import json as _json
+    from execution.mcp_client import tool_result_json as _tool_result_json
+
+    client = McpClient(endpoint, transport or UrllibTransport(), token_provider)
+    client.initialize()
+    arguments = {"instrument_ids": normalized_ids}
+    output = _tool_result_json(client.call_tool("get_option_quotes", arguments))
+    received_at = datetime.now(timezone.utc)
+    response_text = _json.dumps(output)
+    return RawDataVault(root / vault_root).store(
+        source="ROBINHOOD_OFFICIAL_MCP",
+        request={
+            "schema_version": 1,
+            "transport": "PYTHON_DIRECT_MCP",
+            "probe": "FRESH_OPTION_QUOTE",
+            "instrument_ids": normalized_ids,
+            "tool_calls": [{"tool": "get_option_quotes", "input": arguments}],
+            "partial": False,
+        },
+        response={"tool_results": [{"tool": "get_option_quotes", "output": output}]},
+        source_updated_at=_freshest_source_timestamp([response_text], not_after=received_at),
+        received_at=received_at,
+    )
