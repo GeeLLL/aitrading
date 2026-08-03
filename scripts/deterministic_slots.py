@@ -288,6 +288,64 @@ def run_pilot_sample(
                       "skipped": ("ALREADY_OPEN_TODAY" if has_open_candidate
                                   else "NOT_ADMISSIBLE_OR_NO_QUALIFIED")})
 
+    # 5. Daily calibration trade (machinery validation, never evidence; frozen
+    # rule ported from the pilot prompt — see research/calibration_trade.py).
+    from research import calibration_trade as cal
+
+    slot_hhmm = (scheduled.hour, scheduled.minute)
+    day = now.astimezone(scheduled.tzinfo).date().isoformat()
+    cal_dir = cal.calibration_dir(project_root, day)
+    entry = cal.load_entry(project_root, day)
+    try:
+        if entry is None and cal.entry_allowed(slot_hhmm):
+            placed = False
+            for cal_symbol in cal.ranked_symbols(decision)[:3]:
+                receipt = _collect_snapshot(cal_symbol, project_root)
+                envelope = _read_envelope(receipt.path)
+                selection = cal.select_calibration_contract(envelope)
+                if selection is None:
+                    continue
+                instrument, quote, band = selection
+                source = envelope.get("source_updated_at")
+                record = cal.entry_record(
+                    run_id=run_id, symbol=cal_symbol, instrument=instrument,
+                    quote=quote, premium_band=band,
+                    observed_at=_received_at(envelope),
+                    source_updated_at=source if isinstance(source, str) else None,
+                )
+                if cal.write_once(cal_dir / "entry.json", record):
+                    steps.append({"step": "CALIBRATION_ENTRY", "ok": True,
+                                  "symbol": cal_symbol, "premium_band": band,
+                                  "instrument_id": record["instrument_id"]})
+                placed = True
+                break
+            if not placed:
+                steps.append({"step": "CALIBRATION_ENTRY", "ok": True,
+                              "skipped": "NO_QUALIFYING_CALIBRATION_CONTRACT"})
+        elif entry is not None and not (cal_dir / "exit.json").exists():
+            reason = cal.exit_due(entry, now, slot_hhmm)
+            if reason:
+                probe = _collect_quote_probe([str(entry["instrument_id"])], project_root)
+                envelope = _read_envelope(probe.path)
+                quote = option_quotes_by_instrument(envelope).get(str(entry["instrument_id"]))
+                if quote is not None:
+                    cal.write_once(cal_dir / "exit.json", cal.exit_record(
+                        run_id=run_id, entry=entry, quote=quote,
+                        observed_at=_received_at(envelope), exit_reason=reason,
+                    ))
+                    steps.append({"step": "CALIBRATION_EXIT", "ok": True, "reason": reason})
+                else:
+                    steps.append({"step": "CALIBRATION_EXIT", "ok": False,
+                                  "error": "INSTRUMENT_NOT_IN_PROBE_RESULT"})
+            else:
+                steps.append({"step": "CALIBRATION_EXIT", "ok": True, "skipped": "NOT_DUE"})
+        else:
+            steps.append({"step": "CALIBRATION", "ok": True,
+                          "skipped": "DONE_OR_ENTRY_WINDOW_CLOSED"})
+    except (OfficialCollectorError, OSError, ValueError, KeyError) as error:
+        steps.append({"step": "CALIBRATION", "ok": False,
+                      "error": f"{type(error).__name__}: {error}"})
+
     summary["opened_trajectory"] = opened
     summary["refreshed_events"] = refreshed
     return finish("COMPLETED")
