@@ -36,6 +36,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from execution.official_mcp_collector import (
+    BARS_PROBE_LOOKBACK_DAYS,
     OfficialCollectorError,
     collect_fresh_option_quote_probe,
     collect_official_raw_snapshot,
@@ -93,8 +94,11 @@ def _collect_bars(symbols: list[str], project_root: Path) -> list:
 
         return [collect_universe_bars_probe_direct(
             symbols, token_provider=_direct_token_provider(), project_root=project_root,
+            lookback_days=BARS_PROBE_LOOKBACK_DAYS,
         )]
-    return collect_universe_bars_probes(symbols, project_root=project_root)
+    return collect_universe_bars_probes(
+        symbols, project_root=project_root, lookback_days=BARS_PROBE_LOOKBACK_DAYS,
+    )
 
 
 def _collect_quote_probe(instrument_ids: list[str], project_root: Path):

@@ -9,6 +9,9 @@ from zoneinfo import ZoneInfo
 
 SESSION_TIMEZONE = ZoneInfo("America/Los_Angeles")
 from datetime import date, datetime, time, timedelta, timezone
+# NOTE: datetime.time shadows the stdlib `time` module here, so the
+# monotonic clock is imported by name rather than as `time.monotonic`.
+from time import monotonic
 from pathlib import Path
 
 from execution.shadow_input import load_shadow_input
@@ -558,6 +561,20 @@ BARS_PROBE_MAX_SYMBOLS = 20
 # itself error. The binding constraint is payload size, and the session VWAP
 # needs the whole session, so the window cannot be narrowed instead. Chunk.
 BARS_PROBE_CHUNK_SYMBOLS = 3
+# How many symbols fit in ONE call, per window width. MEASURED against live
+# sessions, never estimated — the cap is payload size, so it has to be probed:
+#   lookback 0 (one session):  3 OK; 5, 7 truncated; 13 tool error   [07-31/08-03]
+#   lookback 1 (two sessions): 1 OK; 2 truncated                     [08-04]
+# An unmeasured width must fail closed rather than guess, so a future
+# lookback=2 raises instead of silently truncating every probe.
+BARS_PROBE_CHUNK_BY_LOOKBACK = {0: 3, 1: 1}
+# The frozen strategy averages volume over 20 completed five-minute bars and
+# seeds a 20-period EMA, which one session supplies only ~100 minutes after the
+# open. With a single-session window the first four slots each day (07:03-08:03)
+# reported SPY_INDICATOR_UNKNOWN and could never produce a signal — 23% of the
+# schedule, structurally dead, observed live on 2026-08-04. Reaching back one
+# session fills the lookback at the open.
+BARS_PROBE_LOOKBACK_DAYS = 1
 # The pilot slot's own timeout is 720s and the probe set is only its first step.
 BARS_PROBE_TOTAL_BUDGET_SECONDS = 480
 
@@ -674,7 +691,8 @@ def collect_universe_bars_probe(
 def collect_universe_bars_probes(
     symbols: list[str],
     *,
-    chunk_size: int = BARS_PROBE_CHUNK_SYMBOLS,
+    chunk_size: int | None = None,
+    lookback_days: int = 0,
     total_budget_seconds: int = BARS_PROBE_TOTAL_BUDGET_SECONDS,
     **kwargs: Any,
 ) -> list[RawSnapshotReceipt]:
@@ -688,8 +706,18 @@ def collect_universe_bars_probes(
 
     if not symbols:
         raise OfficialCollectorError("Bars probe requires at least one symbol.")
+    if chunk_size is None:
+        # Tie the split to the window width so the two cannot drift apart: a
+        # wider window with yesterday's chunk size truncates every call.
+        if lookback_days not in BARS_PROBE_CHUNK_BY_LOOKBACK:
+            raise OfficialCollectorError(
+                f"No measured symbols-per-call for lookback_days={lookback_days}; "
+                "probe the payload limit before using this window."
+            )
+        chunk_size = BARS_PROBE_CHUNK_BY_LOOKBACK[lookback_days]
     if chunk_size < 1:
         raise OfficialCollectorError("Bars probe chunk size must be positive.")
+    kwargs["lookback_days"] = lookback_days
     ordered: list[str] = []
     for symbol in symbols:
         candidate = str(symbol).strip().upper()
@@ -697,11 +725,25 @@ def collect_universe_bars_probes(
             ordered.append(candidate)
     chunks = [ordered[i:i + chunk_size] for i in range(0, len(ordered), chunk_size)]
     # Every chunk is a separate CLI spawn, so the per-call default (180s) would
-    # let five chunks outlive the 720s pilot slot and be killed mid-probe. Divide
-    # one budget instead, so the probe set fails closed inside the slot rather
-    # than being reaped by the worker with no receipt written.
-    kwargs.setdefault("timeout_seconds", max(60, total_budget_seconds // len(chunks)))
-    return [collect_universe_bars_probe(chunk, **kwargs) for chunk in chunks]
+    # let the set outlive the 720s pilot slot and be killed mid-probe, leaving no
+    # receipt at all. Spend against a real DEADLINE rather than dividing the
+    # budget evenly: an even split needs a per-call floor to stay usable, and
+    # that floor times a large chunk count silently exceeds the budget again
+    # (13 chunks x a 60s floor = 780s > the 720s slot). A deadline holds for any
+    # chunk count, and lets a fast chunk hand its unused time to a slow one.
+    per_chunk_cap = kwargs.pop("timeout_seconds", None)
+    started = monotonic()
+    receipts = []
+    for index, chunk in enumerate(chunks):
+        remaining = total_budget_seconds - (monotonic() - started)
+        if remaining <= 1:
+            raise OfficialCollectorError(
+                f"Bars probe budget of {total_budget_seconds}s exhausted after "
+                f"{index} of {len(chunks)} chunks."
+            )
+        allowance = int(remaining) if per_chunk_cap is None else min(int(remaining), per_chunk_cap)
+        receipts.append(collect_universe_bars_probe(chunk, timeout_seconds=allowance, **kwargs))
+    return receipts
 
 
 def collect_official_shadow_snapshot(

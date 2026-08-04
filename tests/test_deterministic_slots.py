@@ -71,7 +71,7 @@ class PilotSampleTests(unittest.TestCase):
         log_root = root / "logs"
         trajectory_root = root / "trajectories"
 
-        def fake_bars(symbols, project_root=None):
+        def fake_bars(symbols, project_root=None, **kwargs):
             if bars_fails:
                 from execution.official_mcp_collector import OfficialCollectorError
                 raise OfficialCollectorError("MCP_DOWN")

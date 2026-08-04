@@ -70,10 +70,13 @@ class ProbeArgumentTests(unittest.TestCase):
         A single session supplies that only ~100 minutes after the open, so with
         the default window the earliest slots legitimately report
         INSUFFICIENT_VOLUME_LOOKBACK and produce no signal. That is fail-closed
-        and correct, but it is a REAL coverage gap: the fix is to chunk symbols
-        across several probes so a multi-session window fits under the payload
-        cap, not to widen the window and hope. This test exists so the gap is
-        recorded rather than forgotten.
+        and correct, but it was a REAL coverage gap: 07:03-08:03 PDT could never
+        produce a signal, 23% of the schedule, confirmed live on 2026-08-04.
+
+        FIXED by BARS_PROBE_LOOKBACK_DAYS=1 — chunking (one symbol per call at
+        that width, measured) makes a two-session window fit under the payload
+        cap. This test keeps documenting the single-session behaviour, which is
+        still what lookback=0 does.
         """
         from research.universe_features import derive_features
         policy = {"breakout_lookback_completed_bars": 6,
@@ -192,7 +195,12 @@ class BarsProbeChunkingTests(unittest.TestCase):
             with self.assertRaises(OfficialCollectorError):
                 collect_universe_bars_probes([f"SY{i}" for i in range(13)])
 
-    def test_chunk_timeouts_fit_inside_the_pilot_slot(self):
+    def test_no_chunk_may_outlive_the_remaining_budget(self):
+        """Chunks spend against a deadline, so the SET can never outlive the
+        720s pilot slot however many chunks there are. An even split cannot
+        promise this: it needs a per-call floor to stay usable, and 13 chunks
+        times a 60s floor is 780s — past the slot, where the worker reaps the
+        probe and no receipt is written at all."""
         from unittest.mock import patch
         from execution.official_mcp_collector import (
             BARS_PROBE_TOTAL_BUDGET_SECONDS, collect_universe_bars_probes,
@@ -200,10 +208,47 @@ class BarsProbeChunkingTests(unittest.TestCase):
         calls = []
         with patch("execution.official_mcp_collector.collect_universe_bars_probe",
                    side_effect=self._fake(calls)):
-            collect_universe_bars_probes([f"SY{i}" for i in range(13)])
-        total = sum(c[1]["timeout_seconds"] for c in calls)
-        self.assertLessEqual(total, BARS_PROBE_TOTAL_BUDGET_SECONDS + 60 * len(calls))
-        self.assertLess(total, 720)   # the worker's PILOT_TIMEOUT_SECONDS
+            collect_universe_bars_probes([f"SY{i}" for i in range(13)], chunk_size=1)
+        self.assertEqual(len(calls), 13)
+        for _symbols, kwargs in calls:
+            self.assertLessEqual(kwargs["timeout_seconds"], BARS_PROBE_TOTAL_BUDGET_SECONDS)
+        self.assertLess(BARS_PROBE_TOTAL_BUDGET_SECONDS, 720)
+
+    def test_an_exhausted_budget_fails_closed_mid_set(self):
+        from unittest.mock import patch
+        from execution.official_mcp_collector import collect_universe_bars_probes
+        calls = []
+        ticks = iter(range(0, 100_000, 200))       # each chunk burns 200s
+        with patch("execution.official_mcp_collector.monotonic", side_effect=lambda: next(ticks)), \
+             patch("execution.official_mcp_collector.collect_universe_bars_probe",
+                   side_effect=self._fake(calls)):
+            with self.assertRaises(OfficialCollectorError):
+                collect_universe_bars_probes([f"SY{i}" for i in range(13)], chunk_size=1,
+                                             total_budget_seconds=480)
+        # Stopped early rather than running all thirteen past the slot deadline.
+        self.assertLess(len(calls), 13)
+
+    def test_window_width_dictates_the_split(self):
+        """MEASURED: a two-session window fits ONE symbol per call, a one-session
+        window fits three. Tying the split to the width stops the two drifting
+        apart — yesterday's chunk size on a wider window truncates every call."""
+        from unittest.mock import patch
+        from execution.official_mcp_collector import (
+            BARS_PROBE_CHUNK_BY_LOOKBACK, collect_universe_bars_probes,
+        )
+        for lookback, expected in BARS_PROBE_CHUNK_BY_LOOKBACK.items():
+            calls = []
+            with patch("execution.official_mcp_collector.collect_universe_bars_probe",
+                       side_effect=self._fake(calls)):
+                collect_universe_bars_probes([f"SY{i}" for i in range(13)],
+                                             lookback_days=lookback)
+            self.assertTrue(all(len(c[0]) <= expected for c in calls), lookback)
+            self.assertTrue(all(c[1]["lookback_days"] == lookback for c in calls))
+
+    def test_an_unmeasured_window_fails_closed_rather_than_guessing(self):
+        from execution.official_mcp_collector import collect_universe_bars_probes
+        with self.assertRaises(OfficialCollectorError):
+            collect_universe_bars_probes(["SPY"], lookback_days=5)
 
     def test_duplicate_symbols_do_not_buy_extra_calls(self):
         from unittest.mock import patch

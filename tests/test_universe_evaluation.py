@@ -185,6 +185,50 @@ class SnapshotEvaluationTests(unittest.TestCase):
             )
             self.assertIn("No model produced any number here", report["note"])
 
+    def test_prior_session_history_fills_the_lookback_at_the_open(self):
+        """The point of the two-session probe window (BARS_PROBE_LOOKBACK_DAYS).
+
+        A 20-bar volume average and a 20-period EMA need ~100 minutes of a
+        single session, so on 2026-08-04 the first four slots each day
+        (07:03-08:03 PDT) reported SPY_INDICATOR_UNKNOWN and could not produce a
+        signal — 23% of the schedule, structurally dead. Reaching back one
+        session fills the lookback 30 minutes after the open.
+        """
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prior = datetime(2026, 8, 3, 13, 30, tzinfo=timezone.utc)
+            today = datetime(2026, 8, 4, 13, 30, tzinfo=timezone.utc)
+            received = today + timedelta(minutes=33)          # ~07:03 PDT
+            bars = {
+                symbol: series(symbol, prior, 78) + series(symbol, today, 6)
+                for symbol in ("SPY", "QQQ", "NVDA")
+            }
+            path = self._store(root, bars, received)
+
+            report = evaluate_snapshot(path, project_root=ROOT)
+
+            self.assertTrue(report["decision_admissible"], report["bar_time_violations"])
+            for symbol, row in report["symbols"].items():
+                self.assertEqual(row["features"]["insufficient"], [], symbol)
+                self.assertIsNotNone(row["features"]["average_volume"], symbol)
+                self.assertIsNotNone(row["features"]["ema_slow"], symbol)
+
+    def test_a_single_session_at_the_open_still_fails_closed(self):
+        """The counterpart: without the prior session the same moment reports
+        what is missing rather than estimating it."""
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            today = datetime(2026, 8, 4, 13, 30, tzinfo=timezone.utc)
+            received = today + timedelta(minutes=33)
+            bars = {s: series(s, today, 6) for s in ("SPY", "QQQ")}
+            path = self._store(root, bars, received)
+
+            report = evaluate_snapshot(path, project_root=ROOT)
+
+            for row in report["symbols"].values():
+                self.assertIn("INSUFFICIENT_VOLUME_LOOKBACK", row["features"]["insufficient"])
+                self.assertIsNone(row["features"]["volume_ratio"])
+
     def test_venue_placeholder_grid_does_not_poison_bar_time(self):
         """LIVE 2026-08-03: get_equity_historicals returns the WHOLE regular
         session as a grid, so a 16:23Z probe came back carrying zero-volume rows
