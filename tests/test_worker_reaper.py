@@ -9,6 +9,7 @@ from unittest import mock
 
 import monitoring.worker_reaper as reaper_module
 from monitoring.worker_reaper import (
+    DEFAULT_DEADLINE_SECONDS,
     _kill_child_group,
     DIED_NO_SUMMARY,
     FINISHED_STALE,
@@ -45,7 +46,7 @@ class ClassifyWorkerTests(unittest.TestCase):
 
     def test_pilot_over_deadline_and_alive_is_killed(self):
         verdict = classify_worker(
-            record(age_seconds=1021), now=NOW, summary_exists=False,
+            record(age_seconds=DEFAULT_DEADLINE_SECONDS + 1), now=NOW, summary_exists=False,
             process_alive=True, cmdline="python3 scripts/launchd_shadow_worker.py",
         )
         self.assertEqual(verdict, OVERDUE_KILL)
@@ -96,8 +97,12 @@ class ClassifyWorkerTests(unittest.TestCase):
         # Fired 170s late (admitted by the 180s freshness guard): the deadline
         # must still count from the SCHEDULED time, or the reap could land
         # after the next slot fires and cost a second sample.
-        payload = record(age_seconds=860)  # started 860s ago...
-        payload["scheduled_for"] = (NOW - timedelta(seconds=1030)).isoformat()  # ...scheduled 1030s ago
+        # Started inside the deadline, but SCHEDULED outside it: a worker that
+        # fired late must not buy itself extra runtime by starting late.
+        payload = record(age_seconds=DEFAULT_DEADLINE_SECONDS - 160)
+        payload["scheduled_for"] = (
+            NOW - timedelta(seconds=DEFAULT_DEADLINE_SECONDS + 10)
+        ).isoformat()
         verdict = classify_worker(
             payload, now=NOW, summary_exists=False,
             process_alive=True, cmdline="python3 scripts/launchd_shadow_worker.py",

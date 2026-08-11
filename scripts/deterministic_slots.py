@@ -28,6 +28,7 @@ from __future__ import annotations
 import json
 import sys
 from datetime import datetime, timezone
+from time import monotonic
 from pathlib import Path
 from typing import Any
 
@@ -169,6 +170,21 @@ def run_pilot_sample(
     }
     steps: list[dict[str, Any]] = summary["steps"]
 
+    # Per-step timing. Without it a slow slot is undiagnosable: on 2026-08-10 a
+    # full run took 439s against 132s a week earlier for identical code, and
+    # nothing in the receipt said which step had slowed. The pilot slot is capped
+    # at PILOT_TIMEOUT_SECONDS, so knowing WHERE the time goes is what keeps that
+    # cap tunable from evidence rather than guesswork.
+    _mark = [monotonic()]
+
+    def _stamp(entry: dict[str, Any]) -> dict[str, Any]:
+        # NOT named `now`: that is this function's own datetime parameter.
+        at = monotonic()
+        entry["elapsed_seconds"] = round(at - _mark[0], 1)
+        _mark[0] = at
+        steps.append(entry)
+        return entry
+
     def finish(status: str) -> dict[str, Any]:
         summary["status"] = status
         summary["ended_at"] = datetime.now(timezone.utc).isoformat()
@@ -179,14 +195,14 @@ def run_pilot_sample(
     try:
         symbols = list(load_universe_policy(str(project_root / "config/universe.toml"))["symbols"])
         bars_receipts = _collect_bars(symbols, project_root)
-        steps.append({"step": "BARS_PROBE", "ok": True,
+        _stamp({"step": "BARS_PROBE", "ok": True,
                       "snapshot": str(bars_receipts[0].path),
                       "snapshots": [str(r.path) for r in bars_receipts],
                       "sha256": bars_receipts[0].content_sha256,
                       "sha256_all": [r.content_sha256 for r in bars_receipts],
                       "symbols": symbols})
     except (OfficialCollectorError, OSError, ValueError, KeyError) as error:
-        steps.append({"step": "BARS_PROBE", "ok": False, "error": f"{type(error).__name__}: {error}"})
+        _stamp({"step": "BARS_PROBE", "ok": False, "error": f"{type(error).__name__}: {error}"})
         return finish("FAILED_CLOSED")
 
     # 2. Frozen evaluation -> decision record.
@@ -196,12 +212,12 @@ def run_pilot_sample(
         decision["run_id"] = run_id
         decision["policy_label_registry_version"] = registry.version
         decision_path = _atomic_json(log_root / f"{run_id}.decision.json", decision)
-        steps.append({"step": "EVALUATE", "ok": decision.get("status") == "OK",
+        _stamp({"step": "EVALUATE", "ok": decision.get("status") == "OK",
                       "decision": str(decision_path),
                       "admissible": decision.get("decision_admissible"),
                       "qualified": decision.get("qualified_symbols") or []})
     except (OSError, ValueError, KeyError) as error:
-        steps.append({"step": "EVALUATE", "ok": False, "error": f"{type(error).__name__}: {error}"})
+        _stamp({"step": "EVALUATE", "ok": False, "error": f"{type(error).__name__}: {error}"})
         return finish("FAILED_CLOSED")
 
     # 3. Refresh open trajectories (fill/horizon evidence). A probe failure here
@@ -232,13 +248,13 @@ def run_pilot_sample(
                 )
                 write_event(trajectory_root, event)
                 refreshed += 1
-            steps.append({"step": "REFRESH", "ok": True, "targets": len(targets),
+            _stamp({"step": "REFRESH", "ok": True, "targets": len(targets),
                           "refreshed": refreshed, "snapshot": str(probe_receipt.path)})
         except (OfficialCollectorError, OSError, ValueError) as error:
-            steps.append({"step": "REFRESH", "ok": False, "targets": len(targets),
+            _stamp({"step": "REFRESH", "ok": False, "targets": len(targets),
                           "error": f"{type(error).__name__}: {error}"})
     else:
-        steps.append({"step": "REFRESH", "ok": True, "targets": 0, "refreshed": 0})
+        _stamp({"step": "REFRESH", "ok": True, "targets": 0, "refreshed": 0})
 
     # 4. Open at most one new candidate per day, only when the frozen evaluation
     # admits one and a policy label actually fires. Deterministic; no ranking AI.
@@ -270,7 +286,7 @@ def run_pilot_sample(
                     ) if underlying_price is not None else None
                 )
                 if selection is None:
-                    steps.append({"step": "OPEN_CANDIDATE", "ok": False,
+                    _stamp({"step": "OPEN_CANDIDATE", "ok": False,
                                   "symbol": target_symbol,
                                   "error": "NO_QUOTED_INSTRUMENT_NEAR_MONEY"})
                 else:
@@ -286,19 +302,19 @@ def run_pilot_sample(
                     )
                     write_event(trajectory_root, event)
                     opened = str(event["trajectory_id"])
-                    steps.append({"step": "OPEN_CANDIDATE", "ok": True,
+                    _stamp({"step": "OPEN_CANDIDATE", "ok": True,
                                   "symbol": target_symbol, "labels": labels,
                                   "trajectory_id": opened,
                                   "snapshot": str(option_receipt.path)})
             except (OfficialCollectorError, OSError, ValueError) as error:
-                steps.append({"step": "OPEN_CANDIDATE", "ok": False, "symbol": target_symbol,
+                _stamp({"step": "OPEN_CANDIDATE", "ok": False, "symbol": target_symbol,
                               "error": f"{type(error).__name__}: {error}"})
         else:
-            steps.append({"step": "OPEN_CANDIDATE", "ok": True, "symbol": target_symbol,
+            _stamp({"step": "OPEN_CANDIDATE", "ok": True, "symbol": target_symbol,
                           "skipped": "NO_POLICY_LABEL_FIRED",
                           "volume_ratio": volume_ratio})
     else:
-        steps.append({"step": "OPEN_CANDIDATE", "ok": True,
+        _stamp({"step": "OPEN_CANDIDATE", "ok": True,
                       "skipped": ("ALREADY_OPEN_TODAY" if has_open_candidate
                                   else "NOT_ADMISSIBLE_OR_NO_QUALIFIED")})
 
@@ -328,13 +344,13 @@ def run_pilot_sample(
                     source_updated_at=source if isinstance(source, str) else None,
                 )
                 if cal.write_once(cal_dir / "entry.json", record):
-                    steps.append({"step": "CALIBRATION_ENTRY", "ok": True,
+                    _stamp({"step": "CALIBRATION_ENTRY", "ok": True,
                                   "symbol": cal_symbol, "premium_band": band,
                                   "instrument_id": record["instrument_id"]})
                 placed = True
                 break
             if not placed:
-                steps.append({"step": "CALIBRATION_ENTRY", "ok": True,
+                _stamp({"step": "CALIBRATION_ENTRY", "ok": True,
                               "skipped": "NO_QUALIFYING_CALIBRATION_CONTRACT"})
         elif entry is not None and not (cal_dir / "exit.json").exists():
             reason = cal.exit_due(entry, now, slot_hhmm)
@@ -347,17 +363,17 @@ def run_pilot_sample(
                         run_id=run_id, entry=entry, quote=quote,
                         observed_at=_received_at(envelope), exit_reason=reason,
                     ))
-                    steps.append({"step": "CALIBRATION_EXIT", "ok": True, "reason": reason})
+                    _stamp({"step": "CALIBRATION_EXIT", "ok": True, "reason": reason})
                 else:
-                    steps.append({"step": "CALIBRATION_EXIT", "ok": False,
+                    _stamp({"step": "CALIBRATION_EXIT", "ok": False,
                                   "error": "INSTRUMENT_NOT_IN_PROBE_RESULT"})
             else:
-                steps.append({"step": "CALIBRATION_EXIT", "ok": True, "skipped": "NOT_DUE"})
+                _stamp({"step": "CALIBRATION_EXIT", "ok": True, "skipped": "NOT_DUE"})
         else:
-            steps.append({"step": "CALIBRATION", "ok": True,
+            _stamp({"step": "CALIBRATION", "ok": True,
                           "skipped": "DONE_OR_ENTRY_WINDOW_CLOSED"})
     except (OfficialCollectorError, OSError, ValueError, KeyError) as error:
-        steps.append({"step": "CALIBRATION", "ok": False,
+        _stamp({"step": "CALIBRATION", "ok": False,
                       "error": f"{type(error).__name__}: {error}"})
 
     summary["opened_trajectory"] = opened

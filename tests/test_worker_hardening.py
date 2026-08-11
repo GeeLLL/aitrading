@@ -226,3 +226,31 @@ class SafetyInvariantTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TimeoutChainInvariantTests(unittest.TestCase):
+    """The three caps have to nest, and it is easy to raise one and silently
+    break the nesting: a pilot cap above the reaper deadline gets legitimate
+    slow runs killed as hung, and a reaper deadline above the slot spacing lets
+    a hung worker survive into the next slot and starve it via the flock."""
+
+    def test_pilot_cap_fits_under_the_reaper_deadline(self):
+        from monitoring.worker_reaper import DEFAULT_DEADLINE_SECONDS
+        from scripts import launchd_shadow_worker as worker
+
+        overhead = 60      # start ack + dashboard rebuild + process teardown
+        self.assertLessEqual(
+            worker.PILOT_TIMEOUT_SECONDS + overhead, DEFAULT_DEADLINE_SECONDS,
+        )
+
+    def test_reaper_deadline_fits_inside_one_slot(self):
+        from monitoring.worker_reaper import DEADLINE_SECONDS, DEFAULT_DEADLINE_SECONDS
+
+        for deadline in (*DEADLINE_SECONDS.values(), DEFAULT_DEADLINE_SECONDS):
+            self.assertLess(deadline, 1200)
+
+    def test_the_pilot_cap_covers_a_measured_worst_case_slot(self):
+        """bars probe ~145s + open candidate ~90s + calibration entry ~300s."""
+        from scripts import launchd_shadow_worker as worker
+
+        self.assertGreaterEqual(worker.PILOT_TIMEOUT_SECONDS, 145 + 90 + 300)

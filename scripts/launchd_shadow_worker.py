@@ -41,7 +41,13 @@ SLOTS = DAILY_SLOTS
 CANARY_RETRY_ELAPSED_CAP_SECONDS = 420   # no 2nd canary attempt after this
 PILOT_FAST_FAILURE_SECONDS = 240         # pilot retry only if attempt 1 died faster than this
 PILOT_RETRY_TIMEOUT_SECONDS = 480        # and the retry itself gets a tighter cap
-PILOT_TIMEOUT_SECONDS = 720
+# MEASURED 2026-08-10/11 on the deterministic path: bars probe 130-145s (13
+# chunks at one symbol per call), and the calibration ENTRY step ~300s when it
+# actually fires. A slot that both opens a candidate and enters the calibration
+# trade therefore runs ~535s. At the old 720s cap that left ~185s of margin, and
+# the slot most likely to exceed it is precisely the one opening a position —
+# the worst thing to lose. Still <= 1200-120 (slot spacing minus overhead).
+PILOT_TIMEOUT_SECONDS = 900
 # The gate's five-step deterministic chain (collect + reconcile + tradability +
 # probe + adjudicate) runs longer than a pilot sample; 900s still finishes
 # comfortably before the reaper's 1020s deadline and the next slot.

@@ -26,11 +26,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 # Seconds from worker start until it is declared hung. Canary: 300s collector
-# cap + retry budget + dashboard rebuild << 780. Pilot kinds: 720s agent cap +
-# fast-failure retry (240 + 480) + overhead < 1020. Both stay under the 1200s
-# slot spacing, so a reap always lands before the next slot fires.
+# cap + retry budget + dashboard rebuild << 780. Pilot kinds: 900s agent cap +
+# ack and dashboard overhead < 1080 (the fast-failure retry path is bounded by
+# 240 + 480 = 720, which is smaller). Both stay under the 1200s slot spacing, so
+# a reap always lands before the next slot fires.
 DEADLINE_SECONDS = {"CANARY": 780}
-DEFAULT_DEADLINE_SECONDS = 1020
+DEFAULT_DEADLINE_SECONDS = 1080
 
 # classify_worker verdicts
 RUNNING_OK = "RUNNING_OK"                # within deadline — leave alone
