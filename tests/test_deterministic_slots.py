@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from tempfile import TemporaryDirectory
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
@@ -99,7 +100,7 @@ class PilotSampleTests(unittest.TestCase):
             root = Path(directory)
             summary, log_root, trajectory_root = self._run(root, _decision(True, ["NVDA"], 1.9))
             self.assertEqual("COMPLETED", summary["status"])
-            self.assertIsNotNone(summary["opened_trajectory"])
+            self.assertIsNotNone(summary["opened_trajectories"])
             # Decision record + terminal summary exist (the reader contracts).
             self.assertTrue((log_root / "pilot-20260731-1003.decision.json").is_file())
             self.assertTrue((log_root / "pilot-20260731-1003.summary.json").is_file())
@@ -115,7 +116,7 @@ class PilotSampleTests(unittest.TestCase):
             root = Path(directory)
             summary, _log, trajectory_root = self._run(root, _decision(True, ["NVDA"], 1.6))
             self.assertEqual("COMPLETED", summary["status"])
-            self.assertIsNone(summary["opened_trajectory"])
+            self.assertEqual([], summary["opened_trajectories"])
             self.assertEqual([], list(trajectory_root.glob("*.json")))
             open_step = next(s for s in summary["steps"] if s["step"] == "OPEN_CANDIDATE")
             self.assertEqual("NO_POLICY_LABEL_FIRED", open_step["skipped"])
@@ -139,10 +140,10 @@ class PilotSampleTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             first, _log, trajectory_root = self._run(root, _decision(True, ["NVDA"], 1.9))
-            self.assertIsNotNone(first["opened_trajectory"])
+            self.assertIsNotNone(first["opened_trajectories"])
             second, _log2, _t2 = self._run(root, _decision(True, ["NVDA"], 1.9))
             self.assertEqual("COMPLETED", second["status"])
-            self.assertIsNone(second["opened_trajectory"])  # one candidate per day
+            self.assertEqual([], second["opened_trajectories"])  # one per SYMBOL per day
             self.assertGreaterEqual(second["refreshed_events"], 1)  # QUOTE refresh happened
             kinds = {json.loads(p.read_text())["event_type"] for p in trajectory_root.glob("*.json")}
             self.assertEqual({"CANDIDATE", "QUOTE"}, kinds)
@@ -228,3 +229,125 @@ class HorizonObservabilityTests(unittest.TestCase):
             if kind == "PILOT_SAMPLE" and h * 60 + m >= horizon
         ]
         self.assertTrue(observers, "no slot can observe the last eligible candidate")
+
+
+class FillWindowProbeTests(unittest.TestCase):
+    """A simulated entry requires a LATER quote showing ask <= the limit before
+    the 60-second window shuts. Slots are 20 minutes apart, so the next quote a
+    trajectory ever saw arrived ~433s after its candidate — seven times outside
+    the window. No fill could ever be simulated, which is why every EOD report
+    read "0 filled/exited" and policy P&L was structurally $0.00 rather than
+    merely small. The confirming quote has to happen in the same run."""
+
+    def _candidate(self, deadline_in_seconds: float) -> dict:
+        from datetime import timedelta
+        now = datetime.now(timezone.utc)
+        return {
+            "trajectory_id": "T-1",
+            "instrument_id": "inst-1",
+            "decision_time": now.isoformat(),
+            "target_horizon_minutes": 60,
+            "underlying": "SOFI",
+            "option_type": "CALL",
+            "strike": 18.5,
+            "limit_price": 0.61,
+            "ask": 0.61,
+            "quote_received_at": now.isoformat(),
+            "fill_window_deadline": (now + timedelta(seconds=deadline_in_seconds)).isoformat(),
+        }
+
+    def _receipt(self, root: Path, ask: str):
+        from execution.raw_data_vault import RawDataVault
+        from datetime import timedelta
+        received = datetime.now(timezone.utc)
+        return RawDataVault(root).store(
+            source="ROBINHOOD_OFFICIAL_MCP",
+            request={"schema_version": 1, "symbol": "SOFI", "tool_calls": []},
+            response={"tool_results": [{
+                "tool": "get_option_quotes",
+                "output": {"data": {"results": [{"quote": {
+                    "instrument_id": "inst-1", "ask_price": ask, "bid_price": "0.58",
+                }}]}},
+            }]},
+            source_updated_at=received - timedelta(seconds=1),
+            received_at=received,
+        )
+
+    def test_the_confirming_quote_is_taken_inside_the_window(self):
+        from scripts.deterministic_slots import (
+            FILL_PROBE_BUDGET_SECONDS, _observe_fill_window,
+        )
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            steps = []
+            candidate = self._candidate(FILL_PROBE_BUDGET_SECONDS)   # fire immediately
+            with patch("scripts.deterministic_slots._collect_quote_probe",
+                       return_value=self._receipt(root, "0.60")):
+                _observe_fill_window(event=candidate, trajectory_root=root / "traj",
+                                     project_root=root, stamp=steps.append)
+            self.assertEqual(steps[0]["step"], "FILL_WINDOW_PROBE")
+            self.assertTrue(steps[0]["ok"], steps[0])
+            self.assertTrue(steps[0]["inside_window"])
+            self.assertLess(steps[0]["seconds_into_window"], 60)
+            written = list((root / "traj").glob("*"))
+            self.assertTrue(written, "no confirming quote event was recorded")
+
+    def test_an_already_closed_window_is_recorded_not_probed(self):
+        from scripts.deterministic_slots import _observe_fill_window
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            steps = []
+            with patch("scripts.deterministic_slots._collect_quote_probe") as probe:
+                _observe_fill_window(event=self._candidate(-10), trajectory_root=root,
+                                     project_root=root, stamp=steps.append)
+            probe.assert_not_called()
+            self.assertFalse(steps[0]["ok"])
+            self.assertEqual(steps[0]["error"], "WINDOW_CLOSED_BEFORE_PROBE")
+
+    def test_a_candidate_without_a_window_fails_closed(self):
+        from scripts.deterministic_slots import _observe_fill_window
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            steps = []
+            with patch("scripts.deterministic_slots._collect_quote_probe") as probe:
+                _observe_fill_window(event={"instrument_id": "x"}, trajectory_root=root,
+                                     project_root=root, stamp=steps.append)
+            probe.assert_not_called()
+            self.assertEqual(steps[0]["error"], "NO_FILL_WINDOW_ON_CANDIDATE")
+
+    def test_the_budget_leaves_room_for_the_probes_own_round_trip(self):
+        """A wait paced without allowing for the probe lands the quote after the
+        window it was meant to fall inside — that cost a met limit on 07-30."""
+        from scripts.deterministic_slots import FILL_PROBE_BUDGET_SECONDS
+        from scripts.eod_report import DEFAULT_FILL_WINDOW_SECONDS
+        self.assertGreaterEqual(FILL_PROBE_BUDGET_SECONDS, 15)
+        self.assertLess(FILL_PROBE_BUDGET_SECONDS, DEFAULT_FILL_WINDOW_SECONDS)
+
+
+class MultipleCandidatesTests(unittest.TestCase):
+    """The one-per-DAY cap was inherited from capital allocation, but a read-only
+    shadow allocates no capital. It bought nothing and cost data: on 2026-08-03
+    four signals cleared BASE_18 and three were discarded, leaving a single
+    trajectory for the whole period. The cap is now one per SYMBOL per day."""
+
+    def test_every_qualifying_symbol_opens(self):
+        from scripts import deterministic_slots as mod
+        source = Path(mod.__file__).read_text(encoding="utf-8")
+        block = source[source.index("# 4. Open new candidates"):source.index("# 5. Daily calibration")]
+        self.assertIn("for target_symbol in fresh:", block)
+        self.assertNotIn("has_open_candidate", block)
+
+    def test_a_symbol_already_open_today_is_not_reopened(self):
+        from scripts import deterministic_slots as mod
+        source = Path(mod.__file__).read_text(encoding="utf-8")
+        block = source[source.index("# 4. Open new candidates"):source.index("# 5. Daily calibration")]
+        self.assertIn("symbols_open_today", block)
+        self.assertIn("ALL_QUALIFIED_ALREADY_OPEN_TODAY", block)
+
+    def test_each_opened_candidate_gets_its_own_fill_window_probe(self):
+        """Otherwise the extra trajectories are unfillable exactly like the old
+        single one, and more positions still means zero P&L."""
+        from scripts import deterministic_slots as mod
+        source = Path(mod.__file__).read_text(encoding="utf-8")
+        block = source[source.index("for target_symbol in fresh:"):source.index("# 5. Daily calibration")]
+        self.assertIn("_observe_fill_window(", block)

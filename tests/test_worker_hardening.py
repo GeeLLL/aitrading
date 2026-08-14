@@ -254,3 +254,28 @@ class TimeoutChainInvariantTests(unittest.TestCase):
         from scripts import launchd_shadow_worker as worker
 
         self.assertGreaterEqual(worker.PILOT_TIMEOUT_SECONDS, 145 + 90 + 300)
+
+
+class SlotBudgetWithCandidatesTests(unittest.TestCase):
+    """Opening candidates is no longer capped at one per day, so the slot's cost
+    now scales with how many symbols qualify. The fan-out has to stay inside the
+    pilot cap: a slot reaped mid-run loses everything, including trajectories it
+    had already written."""
+
+    def test_the_measured_worst_case_slot_still_fits(self):
+        from scripts.deterministic_slots import MAX_CANDIDATES_PER_SLOT
+        from scripts import launchd_shadow_worker as worker
+
+        bars = 145                       # 13 chunks, one symbol per call
+        per_candidate = 86               # snapshot ~40s + window wait ~35s + probe ~11s
+        calibration = 300
+        worst = bars + MAX_CANDIDATES_PER_SLOT * per_candidate + calibration
+        self.assertLessEqual(worst, worker.PILOT_TIMEOUT_SECONDS)
+
+    def test_the_cap_is_reported_not_silent(self):
+        from pathlib import Path
+        from scripts import deterministic_slots as mod
+
+        source = Path(mod.__file__).read_text(encoding="utf-8")
+        self.assertIn("SLOT_CANDIDATE_CAP", source)
+        self.assertIn('"deferred"', source)

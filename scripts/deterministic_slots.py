@@ -61,6 +61,22 @@ from strategy.universe import load_universe_policy
 
 MAX_PROBE_INSTRUMENTS = 6   # fresh-quote-probe CLI bound
 
+# Seconds reserved inside the 60s fill window for the confirming probe's own
+# round trip. MEASURED: the fresh-quote probe is a Claude CLI spawn taking
+# ~10-15s, and a 2026-07-30 attempt missed a met limit because the wait was
+# paced without accounting for it. Firing this early leaves margin while still
+# observing late in the window.
+FILL_PROBE_BUDGET_SECONDS = 25
+
+# Candidates opened in ONE slot. Each costs ~86s measured (option snapshot ~40s,
+# the fill-window wait ~35s, the confirming probe ~11s), so an unbounded fan-out
+# would outrun PILOT_TIMEOUT_SECONDS and the worker would reap the slot mid-run,
+# losing everything including the trajectories already written. Three keeps the
+# worst case (145s bars + 3x86s + ~300s calibration) inside the cap. Symbols are
+# taken strongest-signal-first, and any that do not fit are logged rather than
+# silently dropped.
+MAX_CANDIDATES_PER_SLOT = 3
+
 
 def _use_direct_transport() -> bool:
     """Direct (LLM-free) MCP transport is an explicit opt-in: the owner sets
@@ -144,6 +160,86 @@ def _horizon_is_observable(now: datetime, project_root: Path) -> bool:
     # the minute turns and reaches the refresh step later still.
     opened_at_slot = local.replace(second=0, microsecond=0)
     return opened_at_slot + timedelta(minutes=TARGET_HORIZON_MINUTES) <= last_slot
+
+
+def _observe_fill_window(*, event, trajectory_root: Path, project_root: Path, stamp) -> None:
+    """Re-quote the contract INSIDE its own fill window, in this same run.
+
+    A simulated entry exists only if a later quote shows ask <= the recorded
+    limit before the 60-second window closes. Slots are 20 minutes apart, so the
+    next quote a trajectory ever saw arrived ~433 seconds after the candidate —
+    seven times outside the window. No fill could ever be simulated, which is why
+    every EOD report has read "0 filled/exited" and policy P&L has been
+    structurally $0.00 rather than merely small.
+
+    The wait is paced off MEASURED elapsed time and re-checked against the real
+    deadline, never a fixed sleep: the probe is a CLI round trip of its own, and
+    a sleep chosen without accounting for it lands the quote after the window
+    that was supposed to contain it.
+    """
+    from datetime import timedelta
+    from time import sleep
+
+    from research.trajectory_recorder import observation_event
+
+    deadline = _parse_ts_or_none(event.get("fill_window_deadline"))
+    limit_at = _parse_ts_or_none(event.get("quote_received_at"))
+    instrument_id = str(event.get("instrument_id") or "")
+    if deadline is None or limit_at is None or not instrument_id:
+        stamp({"step": "FILL_WINDOW_PROBE", "ok": False, "error": "NO_FILL_WINDOW_ON_CANDIDATE"})
+        return
+
+    # Aim to observe late in the window (a longer look is a stronger test that
+    # the ask actually held), while leaving room for the probe's own round trip.
+    probe_budget = timedelta(seconds=FILL_PROBE_BUDGET_SECONDS)
+    fire_at = deadline - probe_budget
+    while True:
+        remaining = (fire_at - datetime.now(timezone.utc)).total_seconds()
+        if remaining <= 0:
+            break
+        sleep(min(remaining, 5.0))
+
+    if datetime.now(timezone.utc) >= deadline:
+        stamp({"step": "FILL_WINDOW_PROBE", "ok": False,
+               "error": "WINDOW_CLOSED_BEFORE_PROBE",
+               "deadline": event.get("fill_window_deadline")})
+        return
+    try:
+        receipt = _collect_quote_probe([instrument_id], project_root)
+        envelope = _read_envelope(receipt.path)
+        quotes = option_quotes_by_instrument(envelope)
+        quote = quotes.get(instrument_id)
+        if quote is None:
+            stamp({"step": "FILL_WINDOW_PROBE", "ok": False, "error": "INSTRUMENT_NOT_IN_PROBE"})
+            return
+        received = _received_at(envelope)
+        source = envelope.get("source_updated_at")
+        observation = observation_event(
+            candidate=event,
+            quote=quote,
+            event_type="QUOTE",
+            quote_received_at=received,
+            source_updated_at=source if isinstance(source, str) else None,
+        )
+        write_event(trajectory_root, observation)
+        stamp({"step": "FILL_WINDOW_PROBE", "ok": True,
+               "instrument_id": instrument_id,
+               "seconds_into_window": round((received - limit_at).total_seconds(), 1),
+               "inside_window": received < deadline,
+               "ask": observation.get("ask"),
+               "limit": event.get("limit_price")})
+    except (OfficialCollectorError, OSError, ValueError) as error:
+        stamp({"step": "FILL_WINDOW_PROBE", "ok": False,
+               "error": f"{type(error).__name__}: {error}"})
+
+
+def _parse_ts_or_none(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return _received_at({"received_at": value})
+    except ValueError:
+        return None
 
 
 def _atomic_json(path: Path, payload: dict[str, Any]) -> Path:
@@ -280,14 +376,26 @@ def run_pilot_sample(
     else:
         _stamp({"step": "REFRESH", "ok": True, "targets": 0, "refreshed": 0})
 
-    # 4. Open at most one new candidate per day, only when the frozen evaluation
-    # admits one and a policy label actually fires. Deterministic; no ranking AI.
-    opened: str | None = None
-    has_open_candidate = any(
-        any(event.get("event_type") == "CANDIDATE" and not event.get("rejection_reasons")
-            for event in events)
+    # 4. Open new candidates when the frozen evaluation admits them and a policy
+    # label fires — at most ONE PER SYMBOL per day. Deterministic; no ranking AI.
+    #
+    # This used to be one per DAY across all symbols, a cap inherited from
+    # capital allocation. A read-only shadow has no capital to allocate, so the
+    # cap bought nothing and cost data: on 2026-08-03 four signals cleared the
+    # BASE_18 threshold and three were discarded, leaving one trajectory for the
+    # whole period. Recording every qualifying signal is free and is the only
+    # way the 30-trade gate ever completes.
+    #
+    # Same-day trajectories are NOT independent observations — they share a
+    # regime and often a session-wide move — so this raises the data rate, not
+    # the statistical power per trade. The validation arithmetic is unchanged.
+    opened: list[str] = []
+    symbols_open_today = {
+        str(event.get("underlying") or "").upper()
         for events in groups.values()
-    )
+        for event in events
+        if event.get("event_type") == "CANDIDATE" and not event.get("rejection_reasons")
+    }
     qualified = list(decision.get("qualified_symbols") or [])
     # A position whose horizon falls after the day's last slot can never be
     # observed reaching it, so it yields no outcome AND consumes the day's one
@@ -298,15 +406,36 @@ def run_pilot_sample(
     if not closeable:
         _stamp({"step": "OPEN_CANDIDATE", "ok": True,
                 "skipped": "HORIZON_AFTER_LAST_SLOT"})
-    elif decision.get("decision_admissible") and qualified and not has_open_candidate:
-        target_symbol = str(qualified[0])
-        symbol_report = (decision.get("symbols") or {}).get(target_symbol) or {}
-        volume_ratio = symbol_report.get("volume_ratio")
-        labels = (
-            list(registry.labels_for_volume_ratio(float(volume_ratio)))
-            if isinstance(volume_ratio, (int, float)) else []
-        )
-        if labels:
+    elif decision.get("decision_admissible") and qualified:
+        fresh = [sym for sym in qualified if str(sym).upper() not in symbols_open_today]
+
+        def _ratio(sym: str) -> float:
+            value = ((decision.get("symbols") or {}).get(sym) or {}).get("volume_ratio")
+            return float(value) if isinstance(value, (int, float)) else 0.0
+
+        fresh.sort(key=_ratio, reverse=True)
+        if len(fresh) > MAX_CANDIDATES_PER_SLOT:
+            _stamp({"step": "OPEN_CANDIDATE", "ok": True,
+                    "skipped": "SLOT_CANDIDATE_CAP",
+                    "cap": MAX_CANDIDATES_PER_SLOT,
+                    "deferred": fresh[MAX_CANDIDATES_PER_SLOT:]})
+            fresh = fresh[:MAX_CANDIDATES_PER_SLOT]
+        if not fresh:
+            _stamp({"step": "OPEN_CANDIDATE", "ok": True,
+                    "skipped": "ALL_QUALIFIED_ALREADY_OPEN_TODAY",
+                    "qualified": qualified})
+        for target_symbol in fresh:
+            target_symbol = str(target_symbol)
+            symbol_report = (decision.get("symbols") or {}).get(target_symbol) or {}
+            volume_ratio = symbol_report.get("volume_ratio")
+            labels = (
+                list(registry.labels_for_volume_ratio(float(volume_ratio)))
+                if isinstance(volume_ratio, (int, float)) else []
+            )
+            if not labels:
+                _stamp({"step": "OPEN_CANDIDATE", "ok": True, "symbol": target_symbol,
+                        "skipped": "NO_POLICY_LABEL_FIRED", "volume_ratio": volume_ratio})
+                continue
             try:
                 option_receipt = _collect_snapshot(target_symbol, project_root)
                 envelope = _read_envelope(option_receipt.path)
@@ -322,37 +451,38 @@ def run_pilot_sample(
                     ) if underlying_price is not None else None
                 )
                 if selection is None:
-                    _stamp({"step": "OPEN_CANDIDATE", "ok": False,
-                                  "symbol": target_symbol,
-                                  "error": "NO_QUOTED_INSTRUMENT_NEAR_MONEY"})
-                else:
-                    instrument, quote = selection
-                    source = envelope.get("source_updated_at")
-                    event = candidate_event(
-                        instrument=instrument,
-                        quote=quote,
-                        decision_time=now,
-                        quote_received_at=_received_at(envelope),
-                        source_updated_at=source if isinstance(source, str) else None,
-                        policy_labels=labels,
-                    )
-                    write_event(trajectory_root, event)
-                    opened = str(event["trajectory_id"])
-                    _stamp({"step": "OPEN_CANDIDATE", "ok": True,
-                                  "symbol": target_symbol, "labels": labels,
-                                  "trajectory_id": opened,
-                                  "snapshot": str(option_receipt.path)})
+                    _stamp({"step": "OPEN_CANDIDATE", "ok": False, "symbol": target_symbol,
+                            "error": "NO_QUOTED_INSTRUMENT_NEAR_MONEY"})
+                    continue
+                instrument, quote = selection
+                source = envelope.get("source_updated_at")
+                event = candidate_event(
+                    instrument=instrument,
+                    quote=quote,
+                    decision_time=now,
+                    quote_received_at=_received_at(envelope),
+                    source_updated_at=source if isinstance(source, str) else None,
+                    policy_labels=labels,
+                )
+                write_event(trajectory_root, event)
+                opened.append(str(event["trajectory_id"]))
+                symbols_open_today.add(target_symbol.upper())
+                _stamp({"step": "OPEN_CANDIDATE", "ok": True,
+                        "symbol": target_symbol, "labels": labels,
+                        "trajectory_id": str(event["trajectory_id"]),
+                        "snapshot": str(option_receipt.path)})
+                _observe_fill_window(
+                    event=event,
+                    trajectory_root=trajectory_root,
+                    project_root=project_root,
+                    stamp=_stamp,
+                )
             except (OfficialCollectorError, OSError, ValueError) as error:
                 _stamp({"step": "OPEN_CANDIDATE", "ok": False, "symbol": target_symbol,
-                              "error": f"{type(error).__name__}: {error}"})
-        else:
-            _stamp({"step": "OPEN_CANDIDATE", "ok": True, "symbol": target_symbol,
-                          "skipped": "NO_POLICY_LABEL_FIRED",
-                          "volume_ratio": volume_ratio})
+                        "error": f"{type(error).__name__}: {error}"})
     else:
         _stamp({"step": "OPEN_CANDIDATE", "ok": True,
-                      "skipped": ("ALREADY_OPEN_TODAY" if has_open_candidate
-                                  else "NOT_ADMISSIBLE_OR_NO_QUALIFIED")})
+                "skipped": "NOT_ADMISSIBLE_OR_NO_QUALIFIED"})
 
     # 5. Daily calibration trade (machinery validation, never evidence; frozen
     # rule ported from the pilot prompt — see research/calibration_trade.py).
@@ -412,7 +542,9 @@ def run_pilot_sample(
         _stamp({"step": "CALIBRATION", "ok": False,
                       "error": f"{type(error).__name__}: {error}"})
 
-    summary["opened_trajectory"] = opened
+    # Plural since 2026-08-14: the one-per-day cap is gone, so a slot can open
+    # one trajectory per qualifying symbol.
+    summary["opened_trajectories"] = opened
     summary["refreshed_events"] = refreshed
     return finish("COMPLETED")
 
