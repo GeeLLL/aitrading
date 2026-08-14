@@ -271,6 +271,7 @@ def run_pilot_sample(
     log_root: Path,
     trajectory_root: Path,
     project_root: Path = ROOT,
+    calibration_root: Path | None = None,
 ) -> dict[str, Any]:
     """One deterministic pilot sample. Returns the terminal summary (also
     written to ``<run_id>.summary.json``). Fail-closed steps record their
@@ -490,8 +491,15 @@ def run_pilot_sample(
 
     slot_hhmm = (scheduled.hour, scheduled.minute)
     day = now.astimezone(scheduled.tzinfo).date().isoformat()
-    cal_dir = cal.calibration_dir(project_root, day)
-    entry = cal.load_entry(project_root, day)
+    # Calibration state lives under its own root, mirroring trajectory_root.
+    # It used to be derived from project_root, so an operator dry run pointed at
+    # the repo wrote a real-looking entry.json for the day and the next morning's
+    # calibration step skipped as DONE_OR_ENTRY_WINDOW_CLOSED — silently
+    # suppressing the day's actual trade. That happened twice in two nights
+    # before the parameter existed.
+    cal_state = calibration_root if calibration_root is not None else project_root
+    cal_dir = cal.calibration_dir(cal_state, day)
+    entry = cal.load_entry(cal_state, day)
     try:
         if entry is None and cal.entry_allowed(slot_hhmm):
             placed = False

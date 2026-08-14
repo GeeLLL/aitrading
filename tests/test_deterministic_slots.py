@@ -351,3 +351,31 @@ class MultipleCandidatesTests(unittest.TestCase):
         source = Path(mod.__file__).read_text(encoding="utf-8")
         block = source[source.index("for target_symbol in fresh:"):source.index("# 5. Daily calibration")]
         self.assertIn("_observe_fill_window(", block)
+
+
+class CalibrationStateIsolationTests(unittest.TestCase):
+    """Calibration state used to be derived from project_root, so an operator
+    dry run pointed at the repo wrote a real-looking entry.json for the day; the
+    next morning's calibration step then skipped as DONE_OR_ENTRY_WINDOW_CLOSED
+    and silently suppressed the day's actual trade. That happened on two
+    consecutive nights. Verification must not be able to damage production."""
+
+    def test_the_runner_accepts_a_separate_calibration_root(self):
+        import inspect
+        from scripts.deterministic_slots import run_pilot_sample
+        params = inspect.signature(run_pilot_sample).parameters
+        self.assertIn("calibration_root", params)
+        self.assertIsNone(params["calibration_root"].default)
+
+    def test_calibration_reads_and_writes_go_through_that_root(self):
+        from pathlib import Path
+        from scripts import deterministic_slots as mod
+        source = Path(mod.__file__).read_text(encoding="utf-8")
+        block = source[source.index("# 5. Daily calibration trade"):
+                       source.index('summary["opened_trajectories"]')]
+        for call in ("cal.calibration_dir(", "cal.load_entry("):
+            self.assertIn(f"{call}cal_state", block)
+        # The collectors legitimately still take project_root: they need the
+        # repo's prompts and vault. Only the day's calibration STATE moves.
+        self.assertNotIn("cal.load_entry(project_root", block)
+        self.assertNotIn("cal.calibration_dir(project_root", block)
