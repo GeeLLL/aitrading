@@ -62,7 +62,10 @@ def _decision(admissible: bool, qualified: list[str], volume_ratio: float = 2.0)
         "status": "OK",
         "decision_admissible": admissible,
         "qualified_symbols": qualified,
-        "symbols": {symbol: {"volume_ratio": volume_ratio} for symbol in qualified},
+        # direction is what picks the contract's side; a decision without it
+        # must fail closed rather than open an arbitrary call or put.
+        "symbols": {symbol: {"volume_ratio": volume_ratio, "direction": "CALL"}
+                    for symbol in qualified},
     }
 
 
@@ -165,3 +168,63 @@ class CloseSummaryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HorizonObservabilityTests(unittest.TestCase):
+    """Both trajectories opened before 2026-08-13 are permanently open because
+    their holding horizon fell after the day's last slot: AMD opened 10:43 came
+    due at 11:43 with sampling stopping at 11:23, and SOFI opened 10:23 came due
+    at 11:23:05, five seconds after the final slot fired. A position that cannot
+    be observed reaching its horizon yields no outcome AND consumes the day's
+    one candidate, so it must never be opened."""
+
+    def _at(self, hour, minute, second=3):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        return datetime(2026, 8, 14, hour, minute, second,
+                        tzinfo=ZoneInfo("America/Los_Angeles"))
+
+    def test_a_candidate_is_refused_once_its_horizon_outruns_the_schedule(self):
+        from pathlib import Path
+        from monitoring.daily_schedule import LAST_PILOT_SLOT
+        from research.trajectory_recorder import TARGET_HORIZON_MINUTES
+        from scripts.deterministic_slots import _horizon_is_observable
+
+        last_hour, last_minute = LAST_PILOT_SLOT
+        cutoff = last_hour * 60 + last_minute - TARGET_HORIZON_MINUTES
+        self.assertTrue(_horizon_is_observable(
+            self._at(cutoff // 60, cutoff % 60), Path(".")))
+        self.assertFalse(_horizon_is_observable(
+            self._at((cutoff + 20) // 60, (cutoff + 20) % 60), Path(".")))
+
+    def test_the_cutoff_is_not_decided_by_launch_lag(self):
+        """Slots fire seconds after their scheduled minute. Comparing raw
+        timestamps let a 3-second lag disqualify a whole slot — exactly what
+        stranded SOFI. Eligibility must not change within a slot's own minute."""
+        from pathlib import Path
+        from monitoring.daily_schedule import LAST_PILOT_SLOT
+        from research.trajectory_recorder import TARGET_HORIZON_MINUTES
+        from scripts.deterministic_slots import _horizon_is_observable
+
+        last_hour, last_minute = LAST_PILOT_SLOT
+        cutoff = last_hour * 60 + last_minute - TARGET_HORIZON_MINUTES
+        verdicts = {
+            _horizon_is_observable(self._at(cutoff // 60, cutoff % 60, second), Path("."))
+            for second in (0, 3, 30, 59)
+        }
+        self.assertEqual(len(verdicts), 1, "eligibility flipped inside one slot minute")
+
+    def test_the_schedule_can_observe_a_position_opened_at_the_cutoff(self):
+        """The real invariant: some slot must be scheduled at or after the
+        horizon of a position opened at the last eligible slot."""
+        from monitoring.daily_schedule import DAILY_SLOTS, LAST_PILOT_SLOT
+        from research.trajectory_recorder import TARGET_HORIZON_MINUTES
+
+        last_hour, last_minute = LAST_PILOT_SLOT
+        cutoff = last_hour * 60 + last_minute - TARGET_HORIZON_MINUTES
+        horizon = cutoff + TARGET_HORIZON_MINUTES
+        observers = [
+            h * 60 + m for (h, m), (kind, _s) in DAILY_SLOTS.items()
+            if kind == "PILOT_SAMPLE" and h * 60 + m >= horizon
+        ]
+        self.assertTrue(observers, "no slot can observe the last eligible candidate")

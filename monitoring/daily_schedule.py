@@ -26,8 +26,27 @@ DAILY_SLOTS: dict[tuple[int, int], tuple[str, str]] = {
     (10, 43): ("PILOT_SAMPLE", "XOM"),
     (11, 3): ("PILOT_SAMPLE", "SPY"),
     (11, 23): ("PILOT_SAMPLE", "QQQ"),
+    # Sampling used to stop here, at 11:23, while the market runs to 13:00. With
+    # a 60-minute holding horizon that made every candidate opened after 10:23
+    # STRUCTURALLY IMPOSSIBLE to close: AMD opened 2026-08-03 10:43 needed a
+    # 11:43 observation that no slot provided, and SOFI opened 2026-08-13 10:23
+    # came due at 11:23:05, five seconds after the last slot fired. Both are
+    # still open with no outcome. Signals cluster late in the window (5 of the
+    # 6 this period fired at or after 10:23), so the most productive hours were
+    # producing positions that could never resolve. The window now reaches the
+    # close.
+    (11, 43): ("PILOT_SAMPLE", "AAPL"),
+    (12, 3): ("PILOT_SAMPLE", "MSFT"),
+    (12, 23): ("PILOT_SAMPLE", "NVDA"),
+    (12, 43): ("PILOT_SAMPLE", "AMZN"),
     (13, 5): ("CLOSE_SUMMARY", "SPY"),
 }
+
+# The last slot that can observe a trajectory reaching its horizon. Opening a
+# candidate whose horizon falls after this produces a position with no possible
+# outcome, which is worse than not opening it: it consumes the day's one
+# candidate and yields no data.
+LAST_PILOT_SLOT = max(hm for hm, (kind, _s) in DAILY_SLOTS.items() if kind == "PILOT_SAMPLE")
 
 
 def run_id_for(kind: str, scheduled: datetime) -> str:

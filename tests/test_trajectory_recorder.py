@@ -170,16 +170,49 @@ class SnapshotExtractorTests(unittest.TestCase):
         self.assertEqual(2, len(instruments))
         quotes = option_quotes_by_instrument(self.ENVELOPE)
         self.assertIn("abc123def456", quotes)
-        selection = nearest_the_money(instruments, quotes, 744.80)
+        selection = nearest_the_money(instruments, quotes, 744.80, option_type="CALL")
         self.assertIsNotNone(selection)
         instrument, quote = selection
         # "far" has no quote, so only the quoted near-the-money one qualifies.
         self.assertEqual("abc123def456", instrument["id"])
         self.assertEqual("3.25", quote["ask_price"])
 
+    def test_the_contract_matches_the_signal_direction(self) -> None:
+        """Until 2026-08-13 this ranked purely on strike distance and never read
+        the contract type. A call and a put at the same strike are equidistant,
+        so the venue's listing order decided the side — and BOTH strategy
+        positions ever opened came out as PUTs while the frozen strategy had
+        decided CALL (AMD 08-03, SOFI 08-13, both BULLISH). Every position took
+        the opposite side of its own signal."""
+        instruments = [
+            {"id": "call-atm", "type": "call", "strike_price": "745.0"},
+            {"id": "put-atm", "type": "put", "strike_price": "745.0"},
+        ]
+        quotes = {"call-atm": {"ask_price": "3.25"}, "put-atm": {"ask_price": "3.30"}}
+        for wanted, expected in (("CALL", "call-atm"), ("PUT", "put-atm")):
+            selection = nearest_the_money(instruments, quotes, 745.0, option_type=wanted)
+            self.assertIsNotNone(selection, wanted)
+            self.assertEqual(expected, selection[0]["id"], wanted)
+
+    def test_a_closer_strike_on_the_wrong_side_never_wins(self):
+        instruments = [
+            {"id": "put-closer", "type": "put", "strike_price": "745.0"},
+            {"id": "call-further", "type": "call", "strike_price": "750.0"},
+        ]
+        quotes = {"put-closer": {"ask_price": "3.30"}, "call-further": {"ask_price": "1.10"}}
+        selection = nearest_the_money(instruments, quotes, 745.0, option_type="CALL")
+        self.assertEqual("call-further", selection[0]["id"])
+
+    def test_an_unstated_direction_is_refused_rather_than_guessed(self):
+        instruments = [{"id": "c", "type": "call", "strike_price": "745.0"}]
+        quotes = {"c": {"ask_price": "3.25"}}
+        for bad in ("", "LONG", None):
+            with self.assertRaises(ValueError):
+                nearest_the_money(instruments, quotes, 745.0, option_type=bad)
+
     def test_no_quoted_instrument_returns_none(self) -> None:
         instruments = [{"id": "x", "strike_price": "740.0"}]
-        self.assertIsNone(nearest_the_money(instruments, {}, 744.8))
+        self.assertIsNone(nearest_the_money(instruments, {}, 744.8, option_type="CALL"))
 
 
 if __name__ == "__main__":

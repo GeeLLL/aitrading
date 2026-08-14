@@ -122,6 +122,30 @@ def _collect_snapshot(symbol: str, project_root: Path):
     return collect_official_raw_snapshot(symbol, project_root=project_root, resilient=True)
 
 
+def _horizon_is_observable(now: datetime, project_root: Path) -> bool:
+    """Can a candidate opened NOW still be seen reaching its holding horizon?
+
+    Answering this from the schedule rather than from a hardcoded cutoff means
+    extending or trimming DAILY_SLOTS automatically moves the cutoff with it.
+    """
+    from datetime import timedelta
+
+    from monitoring.daily_schedule import LAST_PILOT_SLOT, SESSION_TIMEZONE
+    from research.trajectory_recorder import TARGET_HORIZON_MINUTES
+
+    local = now.astimezone(SESSION_TIMEZONE)
+    hour, minute = LAST_PILOT_SLOT
+    last_slot = local.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    # Compare on SLOT boundaries, not raw timestamps. Slots fire a few seconds
+    # after their scheduled minute, so an unfloored comparison lets a 3-second
+    # launch lag decide a whole slot's eligibility — the same knife-edge that
+    # left SOFI open on 2026-08-13, due at 11:23:05 against a slot that fired at
+    # 11:23:00. A slot scheduled at the horizon does observe it: it starts after
+    # the minute turns and reaches the refresh step later still.
+    opened_at_slot = local.replace(second=0, microsecond=0)
+    return opened_at_slot + timedelta(minutes=TARGET_HORIZON_MINUTES) <= last_slot
+
+
 def _atomic_json(path: Path, payload: dict[str, Any]) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
@@ -265,7 +289,16 @@ def run_pilot_sample(
         for events in groups.values()
     )
     qualified = list(decision.get("qualified_symbols") or [])
-    if decision.get("decision_admissible") and qualified and not has_open_candidate:
+    # A position whose horizon falls after the day's last slot can never be
+    # observed reaching it, so it yields no outcome AND consumes the day's one
+    # candidate. Both trajectories opened before 2026-08-13 are stuck exactly
+    # this way. Refuse to open one rather than record a position with no
+    # possible result.
+    closeable = _horizon_is_observable(now, project_root)
+    if not closeable:
+        _stamp({"step": "OPEN_CANDIDATE", "ok": True,
+                "skipped": "HORIZON_AFTER_LAST_SLOT"})
+    elif decision.get("decision_admissible") and qualified and not has_open_candidate:
         target_symbol = str(qualified[0])
         symbol_report = (decision.get("symbols") or {}).get(target_symbol) or {}
         volume_ratio = symbol_report.get("volume_ratio")
@@ -283,6 +316,9 @@ def run_pilot_sample(
                         option_instruments(envelope),
                         option_quotes_by_instrument(envelope),
                         underlying_price,
+                        # The frozen strategy's own direction. Passing it is what
+                        # keeps the position on the same side as the signal.
+                        option_type=str(symbol_report.get("direction") or ""),
                     ) if underlying_price is not None else None
                 )
                 if selection is None:

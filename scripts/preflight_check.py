@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -73,6 +74,45 @@ def check_jobs_loaded() -> tuple[bool, str]:
         if result.returncode != 0:
             missing.append(label)
     return (not missing, f"missing: {', '.join(missing)}" if missing else "both loaded")
+
+
+def check_schedule_armed() -> tuple[bool, str]:
+    """Do launchd's OWN calendar triggers match DAILY_SLOTS?
+
+    Checking only that the job is loaded is not enough, and the gap has cost
+    real samples twice. The plist generator writes to stdout, so a regeneration
+    that forgets the redirect leaves the old schedule installed while every
+    surface still reports the job as healthy; separately, a plist edited by hand
+    can diverge from the code that registers the day's expectations. Both look
+    identical to "loaded". This compares what launchd is actually holding
+    against the single source of truth, so a schedule change that did not take
+    effect is caught the morning after rather than by counting missing slots.
+    """
+    from monitoring.daily_schedule import DAILY_SLOTS
+
+    uid = os.getuid()
+    result = subprocess.run(
+        ["launchctl", "print", f"gui/{uid}/com.robinhood-ai-trader.self-arming-worker"],
+        capture_output=True, text=True, timeout=15,
+    )
+    if result.returncode != 0:
+        return False, "self-arming-worker not loaded"
+    live = {
+        (int(hour), int(minute))
+        for minute, hour in re.findall(
+            r'descriptor = \{\s*"Minute" => (\d+)\s*"Hour" => (\d+)', result.stdout
+        )
+    }
+    expected = set(DAILY_SLOTS)
+    if live == expected:
+        return True, f"{len(live)} slots armed, matching DAILY_SLOTS"
+    missing = sorted(expected - live)
+    extra = sorted(live - expected)
+    return False, (
+        f"launchd schedule differs from DAILY_SLOTS; "
+        f"missing={[f'{h:02d}:{m:02d}' for h, m in missing]} "
+        f"unexpected={[f'{h:02d}:{m:02d}' for h, m in extra]}"
+    )
 
 
 def check_claude_cli() -> tuple[bool, str]:
@@ -175,6 +215,7 @@ def main() -> int:
 
     all_ok = True
     all_ok &= run("launchd_jobs_loaded", check_jobs_loaded)
+    all_ok &= run("schedule_armed", check_schedule_armed)
     all_ok &= run("claude_cli", check_claude_cli)
     all_ok &= run("ac_power", check_ac_power)
     all_ok &= run("disk_space", check_disk)

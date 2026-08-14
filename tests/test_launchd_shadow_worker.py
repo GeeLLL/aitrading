@@ -36,7 +36,9 @@ class LaunchdShadowWorkerTests(unittest.TestCase):
         self.assertEqual(_run_id(scheduled, kind), "pilot-20260721-0823")
 
     def test_rejects_unscheduled_invocation(self):
-        now = datetime(2026, 7, 21, 12, 0, 0, tzinfo=LOCAL)
+        # After the close summary, so it stays unscheduled no matter how the
+        # sampling window is extended inside market hours.
+        now = datetime(2026, 7, 21, 14, 30, 0, tzinfo=LOCAL)
         with self.assertRaisesRegex(ValueError, "NO_REGISTERED_SLOT"):
             _resolve_slot(now)
 
@@ -71,12 +73,18 @@ class DailyScheduleTests(unittest.TestCase):
     def test_full_day_expectation_table(self):
         runs = expected_runs_for_date(date(2026, 7, 22))
         self.assertEqual(len(DAILY_SLOTS), len(runs))
-        self.assertEqual(17, len(runs))
         run_ids = [run_id for run_id, _scheduled in runs]
         self.assertEqual("launchd-canary-20260722-0610", run_ids[0])
         self.assertEqual("market-gate-20260722-0635", run_ids[1])
         self.assertEqual("pilot-20260722-0703", run_ids[2])
         self.assertEqual("pilot-close-canary-20260722-1305", run_ids[-1])
+        # Every sampling slot must sit inside the regular session; a slot outside
+        # it collects bars the freshness guard will reject anyway.
+        for (hour, minute), (kind, _symbol) in DAILY_SLOTS.items():
+            if kind != "PILOT_SAMPLE":
+                continue
+            self.assertGreaterEqual((hour, minute), (6, 30), (hour, minute))
+            self.assertLessEqual((hour, minute), (13, 0), (hour, minute))
         for _run_id_value, scheduled in runs:
             self.assertIsNotNone(scheduled.tzinfo)
 

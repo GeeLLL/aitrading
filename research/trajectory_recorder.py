@@ -122,14 +122,31 @@ def nearest_the_money(
     instruments: Iterable[Mapping[str, Any]],
     quotes: Mapping[str, Mapping[str, Any]],
     underlying_price: float,
+    *,
+    option_type: str,
 ) -> tuple[Mapping[str, Any], Mapping[str, Any]] | None:
-    """The quoted instrument whose strike is closest to the underlying.
+    """The quoted CALL or PUT whose strike is closest to the underlying.
+
+    ``option_type`` is REQUIRED and has no default on purpose. Until 2026-08-13
+    this function ranked purely on strike distance and never looked at the
+    contract type at all. A call and a put at the same strike are equidistant,
+    so the winner was whichever the venue happened to list first — and both
+    strategy positions ever recorded came out as PUTS while the frozen strategy
+    had decided CALL (AMD 2026-08-03, SOFI 2026-08-13, both in a BULLISH
+    regime). Every position was therefore taking the opposite side of its own
+    signal, and their losses said nothing about the strategy. Forcing the caller
+    to state the direction is what stops that recurring silently.
 
     Only instruments that actually have a quote qualify — a candidate without an
     observable ask can never be adjudicated and would be dead weight.
     """
+    wanted = str(option_type).strip().upper()
+    if wanted not in ("CALL", "PUT"):
+        raise ValueError(f"option_type must be CALL or PUT, got {option_type!r}")
     best: tuple[float, Mapping[str, Any], Mapping[str, Any]] | None = None
     for instrument in instruments:
+        if str(instrument.get("type") or instrument.get("option_type") or "").upper() != wanted:
+            continue
         strike = _number(instrument.get("strike_price"))
         instrument_id = str(instrument.get("id") or "")
         quote = quotes.get(instrument_id)
